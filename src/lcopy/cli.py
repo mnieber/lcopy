@@ -1,4 +1,5 @@
 import click
+import os
 from pathlib import Path
 
 from .config import LCopyConfig
@@ -78,7 +79,9 @@ def copy(ctx, config, destination, labels, dry_run, conflict, verbose, purge):
 
     # Get options from options file if not provided on command line
     config_files = get_option(ctx, "config", config)
-    destination_dir = get_option(ctx, "destination", destination)
+    destination_dir = os.path.expandvars(
+        os.path.expanduser(get_option(ctx, "destination", destination))
+    )
     label_list = get_option(ctx, "labels", labels)
     dry_run_option = get_option(ctx, "dry_run", dry_run)
     conflict_strategy = (

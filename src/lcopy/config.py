@@ -91,6 +91,13 @@ class LCopyConfig:
         mapping = {}
         excluded_paths = set()
 
+        def add_mapping(source_path, target_path):
+            if target_path.suffix == ".pyc" or "__pycache__" in target_path.parts:
+                return
+
+            if source_path not in mapping:
+                mapping[source_path] = target_path
+
         for label in selected_labels:
             if label not in self.labels:
                 continue
@@ -144,7 +151,7 @@ class LCopyConfig:
                         for file_path in source_dir.glob(pattern):
                             if file_path.is_file():
                                 if file_path not in excluded_paths:
-                                    mapping[file_path] = target_dir / file_path.name
+                                    add_mapping(file_path, target_dir / file_path.name)
                             elif file_path.is_dir():
                                 # Add all files in the directory
                                 for root, _, files in os.walk(file_path):
@@ -162,8 +169,9 @@ class LCopyConfig:
                                             if rel_path.is_relative_to(Path(pattern))
                                             else rel_path
                                         )
-                                        mapping[file_path] = (
-                                            target_dir / base_name / rel_to_base
+                                        add_mapping(
+                                            file_path,
+                                            target_dir / base_name / rel_to_base,
                                         )
                     else:
                         source_path = source_dir / pattern
@@ -184,12 +192,14 @@ class LCopyConfig:
                                         if rel_path.is_relative_to(Path(pattern))
                                         else rel_path
                                     )
-                                    mapping[file_path] = (
-                                        target_dir / base_name / rel_to_base
+                                    add_mapping(
+                                        file_path, target_dir / base_name / rel_to_base
                                     )
                         else:
                             # Add the single file if not excluded
                             if source_path not in excluded_paths:
-                                mapping[source_path] = target_dir / Path(pattern).name
+                                add_mapping(
+                                    source_path, target_dir / Path(pattern).name
+                                )
 
         return mapping
