@@ -18,16 +18,20 @@ def cli(ctx, options):
     ctx.obj = ctx.obj or {}
 
 
-@cli.command()
-@click.option("--config", "-c", multiple=True, help="Configuration file to use")
-@click.pass_context
-def list_labels(ctx, config):
-    """List all available labels in the specified configuration files"""
-    __import__("pudb").set_trace()  # zz
+def load_configuration(ctx, config_files):
+    """
+    Load configuration from specified files.
 
-    # Get config from options file if not provided on command line
-    config_files = get_option(ctx, "config", config)
+    Args:
+        ctx: Click context object
+        config_files: List of configuration file paths
 
+    Returns:
+        An LCopyConfig object with loaded configuration
+
+    Raises:
+        click.Abort: If no valid configuration files are found
+    """
     if not config_files:
         click.echo(
             "Error: No configuration files specified. Use --config or add 'config' to your options file.",
@@ -38,12 +42,33 @@ def list_labels(ctx, config):
     # Load configuration
     lcopy_config = LCopyConfig()
 
+    valid_configs_found = False
     for config_file in config_files:
         try:
             lcopy_config.add_config_from_file(Path(config_file))
+            valid_configs_found = True
         except FileNotFoundError as e:
             click.echo(f"Error: {e}", err=True)
             continue
+
+    if not valid_configs_found:
+        click.echo("No valid configuration files found.")
+        ctx.exit(1)
+
+    return lcopy_config
+
+
+@cli.command()
+@click.option("--config", "-c", multiple=True, help="Configuration file to use")
+@click.pass_context
+def list_labels(ctx, config):
+    """List all available labels in the specified configuration files"""
+
+    # Get config from options file if not provided on command line
+    config_files = get_option(ctx, "config", config)
+
+    # Load configuration
+    lcopy_config = load_configuration(ctx, config_files)
 
     # Display available labels
     labels = lcopy_config.get_available_labels()
@@ -78,6 +103,7 @@ def copy(ctx, config, destination, labels, dry_run, conflict, verbose, purge):
     """Copy files according to the specified labels"""
 
     # Get options from options file if not provided on command line
+    __import__("pudb").set_trace()  # zz
     config_files = get_option(ctx, "config", config)
     destination_dir = os.path.expandvars(
         os.path.expanduser(get_option(ctx, "destination", destination))
@@ -91,13 +117,6 @@ def copy(ctx, config, destination, labels, dry_run, conflict, verbose, purge):
     purge_option = get_option(ctx, "purge", purge)
 
     # Validate required options
-    if not config_files:
-        click.echo(
-            "Error: No configuration files specified. Use --config or add 'config' to your options file.",
-            err=True,
-        )
-        ctx.exit(1)
-
     if not destination_dir:
         click.echo(
             "Error: No destination directory specified. Use --destination or add 'destination' to your options file.",
@@ -106,22 +125,10 @@ def copy(ctx, config, destination, labels, dry_run, conflict, verbose, purge):
         ctx.exit(1)
 
     # Load configuration
-    lcopy_config = LCopyConfig()
-
-    for config_file in config_files:
-        try:
-            lcopy_config.add_config_from_file(Path(config_file))
-        except FileNotFoundError as e:
-            click.echo(f"Error: {e}", err=True)
-            continue
-
-    if not lcopy_config.labels:
-        click.echo("No valid configuration files found.")
-        return
+    lcopy_config = load_configuration(ctx, config_files)
 
     # Get the copy mapping
     selected_labels = list(label_list) if label_list else None
-    __import__("pudb").set_trace()  # zz
     mapping = lcopy_config.get_copy_mapping(selected_labels)
 
     if not mapping:
