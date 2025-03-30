@@ -1,0 +1,25 @@
+# lcopy-options.yaml - Sample options file for lcopy tool
+
+# Configuration files to use (can list multiple)
+config:
+  - ./src/lcopy.yaml
+  - ./libs/lcopy.yaml
+
+# Destination directory for copied files
+destination: ./build/project
+
+# Labels to include (can list multiple)
+labels:
+  - use-scenarios
+  - generate-scenarios
+
+# Conflict resolution strategy (overwrite, skip, prompt)
+conflict: overwrite
+
+# Enable verbose output
+verbose: true
+# Enable dry run mode (no actual copying)
+# dry_run: true
+
+# Purge files in destination that weren't copied
+# purge: true

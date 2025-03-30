@@ -1,0 +1,19 @@
+[project]
+name = "lcopy"
+description = "Copy from multiple source directories using labels"
+version = "1.0.0"
+readme = "README.md"
+dependencies = ["click", "pyyaml"]
+
+[project.scripts]
+lcopy = "lcopy.cli:cli"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
