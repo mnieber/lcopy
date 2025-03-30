@@ -1,51 +1,9 @@
 import click
 from pathlib import Path
-import yaml
 
 from .config import LCopyConfig
 from .copier import FileCopier
-
-
-def load_options_file(ctx, param, value):
-    """
-    Load options from a YAML file and add them to the Click context.
-    This function is used as a callback for the --options parameter.
-    """
-    if not value:
-        return None
-
-    try:
-        with open(value, "r") as f:
-            options = yaml.safe_load(f)
-
-        if not isinstance(options, dict):
-            raise click.BadParameter(
-                f"Options file {value} must contain a YAML dictionary"
-            )
-
-        # Store the options in the context for later access
-        ctx.obj = ctx.obj or {}
-        ctx.obj["options_file"] = options
-
-        return value
-    except FileNotFoundError:
-        raise click.BadParameter(f"Options file {value} not found")
-    except yaml.YAMLError as e:
-        raise click.BadParameter(f"Invalid YAML in options file {value}: {e}")
-
-
-def get_option(ctx, option_name, option_value):
-    """
-    Get option value from options file if not provided on command line.
-    Command line values take precedence over options file values.
-    """
-    # If the value is provided on the command line, use it
-    if option_value is not None:
-        return option_value
-
-    # Otherwise, try to get it from the options file
-    options = ctx.obj.get("options_file", {}) if ctx.obj else {}
-    return options.get(option_name)
+from .options import load_options_file, get_option
 
 
 @click.group()
@@ -64,6 +22,8 @@ def cli(ctx, options):
 @click.pass_context
 def list_labels(ctx, config):
     """List all available labels in the specified configuration files"""
+    __import__("pudb").set_trace()  # zz
+
     # Get config from options file if not provided on command line
     config_files = get_option(ctx, "config", config)
 
@@ -115,6 +75,7 @@ def list_labels(ctx, config):
 @click.pass_context
 def copy(ctx, config, destination, labels, dry_run, conflict, verbose, purge):
     """Copy files according to the specified labels"""
+
     # Get options from options file if not provided on command line
     config_files = get_option(ctx, "config", config)
     destination_dir = get_option(ctx, "destination", destination)
@@ -157,6 +118,7 @@ def copy(ctx, config, destination, labels, dry_run, conflict, verbose, purge):
 
     # Get the copy mapping
     selected_labels = list(label_list) if label_list else None
+    __import__("pudb").set_trace()  # zz
     mapping = lcopy_config.get_copy_mapping(selected_labels)
 
     if not mapping:

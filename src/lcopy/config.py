@@ -139,7 +139,33 @@ class LCopyConfig:
                         continue
 
                     # Process directory patterns (no wildcards)
-                    if not any(c in pattern for c in ["*", "?", "["]):
+                    if any(c in pattern for c in ["*", "?", "["]):
+                        # Process wildcard patterns
+                        for file_path in source_dir.glob(pattern):
+                            if file_path.is_file():
+                                if file_path not in excluded_paths:
+                                    mapping[file_path] = target_dir / file_path.name
+                            elif file_path.is_dir():
+                                # Add all files in the directory
+                                for root, _, files in os.walk(file_path):
+                                    rel_root = Path(root).relative_to(source_dir)
+                                    for file in files:
+                                        file_path = Path(root) / file
+                                        if file_path in excluded_paths:
+                                            continue
+
+                                        rel_path = file_path.relative_to(source_dir)
+                                        # Preserve directory structure from the source
+                                        base_name = Path(pattern).name
+                                        rel_to_base = (
+                                            rel_path.relative_to(Path(pattern))
+                                            if rel_path.is_relative_to(Path(pattern))
+                                            else rel_path
+                                        )
+                                        mapping[file_path] = (
+                                            target_dir / base_name / rel_to_base
+                                        )
+                    else:
                         source_path = source_dir / pattern
                         if source_path.is_dir():
                             # Add all files in the directory except excluded ones
@@ -165,12 +191,5 @@ class LCopyConfig:
                             # Add the single file if not excluded
                             if source_path not in excluded_paths:
                                 mapping[source_path] = target_dir / Path(pattern).name
-                    else:
-                        # Process wildcard patterns
-                        for file_path in source_dir.glob(pattern):
-                            if file_path.is_file() and file_path not in excluded_paths:
-                                rel_path = file_path.relative_to(source_dir)
-                                # For wildcard patterns, maintain directory structure relative to source
-                                mapping[file_path] = target_dir / rel_path
 
         return mapping
