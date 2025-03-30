@@ -103,7 +103,6 @@ def copy(ctx, config, destination, labels, dry_run, conflict, verbose, purge):
     """Copy files according to the specified labels"""
 
     # Get options from options file if not provided on command line
-    __import__("pudb").set_trace()  # zz
     config_files = get_option(ctx, "config", config)
     destination_dir = os.path.expandvars(
         os.path.expanduser(get_option(ctx, "destination", destination))
