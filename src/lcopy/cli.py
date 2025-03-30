@@ -109,8 +109,11 @@ def list_labels(ctx, config):
     help="Strategy for handling conflicts",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
+@click.option(
+    "--purge", is_flag=True, help="Remove files in destination that were not copied"
+)
 @click.pass_context
-def copy(ctx, config, destination, labels, dry_run, conflict, verbose):
+def copy(ctx, config, destination, labels, dry_run, conflict, verbose, purge):
     """Copy files according to the specified labels"""
     # Get options from options file if not provided on command line
     config_files = get_option(ctx, "config", config)
@@ -121,6 +124,7 @@ def copy(ctx, config, destination, labels, dry_run, conflict, verbose):
         get_option(ctx, "conflict", conflict) or "overwrite"
     )  # Default if not specified
     verbose_option = get_option(ctx, "verbose", verbose)
+    purge_option = get_option(ctx, "purge", purge)
 
     # Validate required options
     if not config_files:
@@ -176,16 +180,26 @@ def copy(ctx, config, destination, labels, dry_run, conflict, verbose):
         mapping,
         conflict_strategy=conflict_strategy,
         progress_callback=progress_callback if verbose_option else None,
+        purge=purge_option,
     )
 
     # Show summary
     summary = copier.get_summary()
     if dry_run_option:
-        click.echo(f"Dry run complete. {len(mapping)} files would be copied.")
+        if purge_option:
+            click.echo(
+                f"Dry run complete. {len(mapping)} files would be copied, files in destination not in the copied set would be purged."
+            )
+        else:
+            click.echo(f"Dry run complete. {len(mapping)} files would be copied.")
     else:
+        purge_msg = ""
+        if purge_option:
+            purge_msg = f", {summary['purged_files']} files purged, {summary['purged_dirs']} directories purged"
+
         click.echo(
             f"Copy complete. {summary['copied']} files copied, "
-            f"{summary['skipped']} skipped, {summary['errors']} errors."
+            f"{summary['skipped']} skipped{purge_msg}, {summary['errors']} errors."
         )
 
     if summary["errors"] and verbose_option:
