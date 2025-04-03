@@ -1,0 +1,69 @@
+generate-scenarios:
+  instructions:
+    .:
+      - spec/general/prompts/instructions-for-*.md
+
+use-scenarios:
+  # This is an example of a simple dirname pattern without a regular expression.
+  # It indicates an `instructions` subdirectory in the destination directory.
+  # The source filenames that are copied to this destination directory
+  # are relative to the current directory.
+  instructions:
+    .:
+      - spec/general/prompts/general-explanation-of-technical-specifications.md
+      - spec/general/prompts/structure-of-a-*.md
+    # Note that although this is a nested directory, the contained source filename paths
+    # are still relative to the same current directory.
+    blogs:
+      .:
+        - spec/general/roadmap.md
+
+use-be-scenarios:
+  instructions:
+    blogs:
+      backend:
+        scenarios:
+          # This is an example of a dirname pattern with a regular expression.
+          # The brackets indicate that it's a regex.
+          # The square brackets indicate the part that is variable. This variable part
+          # is also used as the subdirectory name in the destination.
+          #
+          # Note that the path in the regex is relative to the current directory.
+          # When a match is found, then the matching path becomes the current
+          # directory for the filemap nodes that are generated from it.
+          (backend/scenarios/[scenario_name]):
+            - backend
+
+use-fe-scenarios:
+  instructions:
+    blogs:
+      .:
+        - frontend
+
+generate-be:
+  instructions:
+    .:
+      - spec/backend/prompts/general code generation instructions.md
+      - spec/backend/prompts/instructions-for-*.md
+    spec:
+      backend:
+        modules:
+          - spec/backend/modules/*.py
+          - spec/backend/scenarios/**/scenario.py
+    code:
+      blogs_be:
+        app:
+          - blogs_be/app/urls.py
+          - blogs_be/app/models.py
+        blogs:
+          - blogs_be/blogs/actions
+          - blogs_be/blogs/admin.py
+          - blogs_be/blogs/enums.py
+          - blogs_be/blogs/models.py
+          - blogs_be/blogs/permissions.py
+          - blogs_be/blogs/rules
+          - blogs_be/blogs/serializers.py
+          - blogs_be/blogs/shortcuts.py
+          - blogs_be/blogs/tests
+          - blogs_be/blogs/urls.py
+          - blogs_be/blogs/views
