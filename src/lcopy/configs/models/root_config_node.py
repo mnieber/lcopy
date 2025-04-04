@@ -13,5 +13,6 @@ class RootConfigNode:
     Each root node represents a labeled section in the configuration file.
     """
 
+    source_path: str
     label: str  # Label identifying this configuration section (e.g., "use-scenarios")
     child_nodes: T.List["ConfigNode"] = []  # Child configuration nodes

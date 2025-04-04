@@ -2,29 +2,13 @@ import os
 import shutil
 from typing import List, Optional
 
-from filemaps.models.filemap_node import FilemapNode
-from options.models.options import Options
+from lcopy.filemaps.models.filemap_node import FilemapNode
+from lcopy.runtime.models.options import Options
 
 
 def copy_files(
     file_map_tree: List[FilemapNode], options: Optional[Options] = None
 ) -> List[str]:
-    """
-    Copy files according to the file map tree.
-
-    This function traverses the file map tree and copies files from source to target
-    directories. It respects the options for dry_run, conflict resolution, etc.
-
-    Args:
-        file_map_tree: List of filemap nodes defining the files to copy
-        options: Optional Options object with configuration (dry_run, conflict, etc.)
-
-    Returns:
-        List[str]: List of copied file paths (relative to destination)
-
-    Raises:
-        OSError: If there's an issue creating directories or copying files
-    """
     copied_files = []
 
     # Traverse the file map tree
@@ -42,16 +26,6 @@ def copy_files(
 
 
 def _process_node(node: FilemapNode, options: Optional[Options] = None) -> List[str]:
-    """
-    Process a single filemap node, copying its files.
-
-    Args:
-        node: The filemap node to process
-        options: Optional Options object with configuration
-
-    Returns:
-        List[str]: List of copied file paths (relative to destination)
-    """
     copied_files = []
 
     # Skip if source path doesn't exist
@@ -86,23 +60,15 @@ def _process_node(node: FilemapNode, options: Optional[Options] = None) -> List[
         # Create target subdirectories if needed
         target_dir = os.path.dirname(target_file)
         if not os.path.exists(target_dir):
-            if options and options.verbose:
-                print(f"Creating directory: {target_dir}")
-
             if not (options and options.dry_run):
                 os.makedirs(target_dir, exist_ok=True)
 
         # Copy the file
-        if options and options.verbose:
-            print(f"Copying: {source_file} -> {target_file}")
-
         if not (options and options.dry_run):
             shutil.copy2(source_file, target_file)  # copy2 preserves metadata
 
-        # Add to list of copied files
-        copied_files.append(
-            os.path.relpath(target_file, options.destination if options else "")
-        )
+        # Add to list of copied files with absolute path
+        copied_files.append(os.path.abspath(target_file))
 
     return copied_files
 
@@ -110,17 +76,6 @@ def _process_node(node: FilemapNode, options: Optional[Options] = None) -> List[
 def _handle_conflict(
     source_file: str, target_file: str, options: Optional[Options] = None
 ) -> bool:
-    """
-    Handle conflicts when a target file already exists.
-
-    Args:
-        source_file: Path to the source file
-        target_file: Path to the target file
-        options: Optional Options object with conflict resolution strategy
-
-    Returns:
-        bool: True if the conflict was resolved (file should be copied), False otherwise
-    """
     # Default conflict strategy if options not provided
     conflict_strategy = "prompt"
     if options and options.conflict:
@@ -131,8 +86,6 @@ def _handle_conflict(
         return True  # Always overwrite
 
     elif conflict_strategy == "skip":
-        if options and options.verbose:
-            print(f"File exists, skipping: {target_file}")
         return False  # Skip copying
 
     elif conflict_strategy == "prompt":

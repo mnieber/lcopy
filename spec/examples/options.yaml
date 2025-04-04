@@ -1,5 +1,3 @@
-# lcopy-options.yaml - Sample options file for lcopy tool
-
 # Configuration files to use (can list multiple)
 configs:
   - ../mock/src/mock/blogs/blogs.lcopy-config.yaml

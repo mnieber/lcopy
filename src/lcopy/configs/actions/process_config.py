@@ -3,10 +3,10 @@ import re
 import glob
 from typing import List, Optional
 
-from configs.models.config_node import ConfigNode
-from filemaps.models.filemap_node import FilemapNode
-from filemaps.actions.create_filemap_node import create_filemap_node
-from options.models.options import Options
+from lcopy.configs.models.config_node import ConfigNode
+from lcopy.filemaps.models.filemap_node import FilemapNode
+from lcopy.filemaps.actions.create_filemap_node import create_filemap_node
+from lcopy.runtime.models.options import Options
 
 
 def process_config(
@@ -16,24 +16,6 @@ def process_config(
     base_target_dir: str,
     options: Optional[Options] = None,
 ) -> None:
-    """
-    Process a config node and create corresponding filemap nodes.
-
-    This function processes a config node by:
-    1. Finding all source directories that match the dirname pattern
-    2. Creating filemap nodes for each matching directory
-    3. Recursively processing child config nodes
-
-    Args:
-        config: The config node to process
-        file_map_tree: The list of filemap nodes to append to
-        current_dir: Current directory for resolving relative paths (starts as options file dir)
-        base_target_dir: Base target directory for output
-        options: Options object containing destination directory
-
-    Side effects:
-        Modifies file_map_tree by adding new filemap nodes
-    """
     # Check if dirname pattern is a regex pattern (enclosed in parentheses)
     is_regex = config.dirname_pattern.startswith(
         "("
@@ -62,7 +44,7 @@ def process_config(
             target_subdir = ""
             if var_part:
                 extract_pattern = pattern_str.replace(
-                    f"[{var_part}]", f"(?P<{var_part}>.*?)"
+                    f"[{var_part}]", f"(?P<{var_part}>.*?)$"
                 )
                 match = re.match(extract_pattern, rel_path)
                 if match and var_part in match.groupdict():
@@ -88,17 +70,9 @@ def process_config(
                 simple_config, file_map_tree, source_dir, target_dir, options
             )
     else:
-        # Calculate source and target directories
-        source_dir = os.path.join(current_dir, config.dirname_pattern)
-
-        if config.dirname_pattern == ".":
-            # For current directory (.), the target is the same as base_target_dir
-            target_dir = base_target_dir
-        else:
-            target_dir = os.path.join(base_target_dir, config.dirname_pattern)
-
         # Process this directory with the config's filename patterns
-        _process_directory(source_dir, target_dir, config, file_map_tree)
+        target_dir = os.path.join(base_target_dir, config.dirname_pattern)
+        _process_directory(current_dir, target_dir, config, file_map_tree)
 
         # Process child config nodes
         for child_config in config.child_nodes:
@@ -113,15 +87,6 @@ def _process_directory(
     config: ConfigNode,
     file_map_tree: List[FilemapNode],
 ) -> None:
-    """
-    Process a directory with the given config to create filemap nodes.
-
-    Args:
-        source_dir: Source directory path
-        target_dir: Target directory path
-        config: Config node with filename patterns
-        file_map_tree: List of filemap nodes to append to
-    """
     # Skip if source directory doesn't exist
     if not os.path.exists(source_dir):
         return
