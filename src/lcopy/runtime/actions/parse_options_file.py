@@ -5,23 +5,6 @@ from lcopy.runtime.models.options import Options
 
 
 def parse_options_file(options_file: str) -> Options:
-    """
-    Parse the options file and return an Options object.
-
-    This function reads the YAML options file, resolves file paths relative to the
-    options file directory, and expands environment variables and the home directory
-    in file paths.
-
-    Args:
-        options_file: Path to the options YAML file
-
-    Returns:
-        Options: Parsed options object
-
-    Raises:
-        FileNotFoundError: If the options file doesn't exist
-        yaml.YAMLError: If the options file contains invalid YAML
-    """
     # Ensure the options file exists
     if not os.path.exists(options_file):
         raise FileNotFoundError(f"Options file not found: {options_file}")
