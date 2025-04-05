@@ -1,198 +1,137 @@
 #!/usr/bin/env python3
-"""
-lcopy - A file copying tool with advanced configuration options
-
-This tool copies files based on configuration files that specify source and target
-directory patterns, with support for regex matching and variable extraction.
-"""
-
-import os
-import sys
 import argparse
-from typing import List
+import logging
+import sys
 
 from lcopy.runtime.actions.parse_options_file import parse_options_file
+from lcopy.configs.rules.resolve_includes import resolve_includes
 from lcopy.configs.actions.parse_config_file import parse_config_file
-from lcopy.filemaps.models.filemap_node import FilemapNode
 from lcopy.configs.actions.process_config import process_config
 from lcopy.filemaps.actions.copy_files import copy_files
 from lcopy.filemaps.actions.purge_files import purge_files
 
-
-def cmd_copy(args, options_file):
-    """Execute the copy command with the given arguments."""
-    # Parse the options file
-    print(f"Reading options file: {options_file}")
-    options = parse_options_file(options_file)
-
-    # Override options with command-line arguments
-    if args.dry_run:
-        options.dry_run = True
-    if args.verbose:
-        options.verbose = True
-    if args.conflict:
-        options.conflict = args.conflict
-
-    # Print summary of options
-    print(f"Destination directory: {options.destination}")
-    print(f"Labels: {', '.join(options.labels)}")
-    print(f"Conflict resolution: {options.conflict}")
-    print(f"Dry run: {'Yes' if options.dry_run else 'No'}")
-    print(f"Verbose: {'Yes' if options.verbose else 'No'}")
-    print(f"Purge: {'Yes' if options.purge else 'No'}")
-
-    # Parse config files
-    root_config_nodes = []
-    for config_file in options.configs:
-        print(f"Reading config file: {config_file}")
-        configs = parse_config_file(config_file, options)
-        root_config_nodes.extend(configs)
-
-    # Create an empty file map tree
-    file_map_tree: List[FilemapNode] = []
-
-    # Process each config
-    for root_config_node in root_config_nodes:
-        print(f"Processing config section: {root_config_node.label}")
-        for config_node in root_config_node.child_nodes:
-            process_config(
-                config=config_node,
-                file_map_tree=file_map_tree,
-                current_dir=root_config_node.source_path,
-                base_target_dir=options.destination,
-                options=options,
-            )
-
-    # Copy files
-    if not file_map_tree:
-        print("No files to copy.")
-        return 0
-
-    print(f"{'Would copy' if options.dry_run else 'Copying'} files...")
-    copied_files = copy_files(file_map_tree, options)
-
-    # Print summary
-    if options.verbose:
-        print("\nCopied files:")
-        for file in copied_files:
-            print(f"  {file}")
-
-    print(
-        f"\n{'Would have copied' if options.dry_run else 'Copied'} {len(copied_files)} files."
-    )
-
-    # Handle purge if enabled
-    if options.purge:
-        print(
-            f"{'Would purge' if options.dry_run else 'Purging'} files not in copy list..."
-        )
-        purged_files = purge_files(options.destination, copied_files, options)
-
-        if options.verbose:
-            print("\nPurged files:")
-            for file in purged_files:
-                print(f"  {file}")
-
-        print(
-            f"\n{'Would have purged' if options.dry_run else 'Purged'} {len(purged_files)} files."
-        )
-
-    return 0
+logger = logging.getLogger(__name__)
 
 
-def cmd_listlabels(args, options_file):
-    """Execute the listlabels command with the given arguments."""
-
-    # Parse the options file to get the config files
-    print(f"Reading options file: {options_file}")
-    options = parse_options_file(options_file)
-
-    # Collect all labels from all config files
-    all_labels = set()
-    for config_file in options.configs:
-        print(f"Reading config file: {config_file}")
-
-        # Ensure the config file exists
-        if not os.path.exists(config_file):
-            print(f"Warning: Config file not found: {config_file}")
-            continue
-
-        # Read and parse the config file
-        with open(config_file, "r") as file:
-            config_data = yaml.safe_load(file)
-
-        # Add all top-level keys (labels) to the set
-        for label in config_data.keys():
-            all_labels.add(label)
-
-    # Print the results
-    if all_labels:
-        print("\nAvailable labels:")
-        for label in sorted(all_labels):
-            # Check if this label is currently selected in the options
-            is_selected = label in options.labels
-            marker = "*" if is_selected else " "
-            print(f" {marker} {label}")
-
-        print("\n(*) indicates labels currently selected in the options file")
-    else:
-        print("No labels found in the config files.")
-
-    return 0
-
-
-def main():
-    """Main entry point for the lcopy tool."""
-    # Create the top-level parser with the options argument
+def _parse_args():
     parser = argparse.ArgumentParser(
-        description="lcopy - A file copying tool with advanced configuration"
+        description="lcopy - A tool for copying files according to configuration files"
     )
 
-    # Add options file as a required argument before the command
+    # Global arguments
+    parser.add_argument("--options", required=True, help="Path to options file")
     parser.add_argument(
-        "--options", required=True, help="Path to the options YAML file"
+        "-v", "--verbose", action="count", default=0, help="Increase verbosity"
     )
-    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
 
-    # Add subcommands
-    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
+    # Subcommands
+    subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
-    # Parser for the 'copy' command
+    # Copy command
     copy_parser = subparsers.add_parser(
         "copy", help="Copy files according to configuration"
     )
-    copy_parser.add_argument(
-        "--dry-run", action="store_true", help="Run in dry-run mode (no actual copying)"
-    )
-    copy_parser.add_argument(
-        "--conflict",
-        choices=["overwrite", "skip", "prompt"],
-        help="Conflict resolution strategy",
-    )
 
-    # Parser for the 'listlabels' command
+    # Listlabels command
     listlabels_parser = subparsers.add_parser(
-        "listlabels", help="List available labels in config files"
+        "listlabels", help="List all labels in the configuration files"
     )
-    assert listlabels_parser
 
-    # Parse arguments
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    # Handle case when no command is provided
-    if not args.command:
-        parser.print_help()
-        return 0
 
-    # Execute the appropriate command
+def _setup_logging(verbosity):
+    log_level = logging.WARNING
+    if verbosity >= 2:
+        log_level = logging.DEBUG
+    elif verbosity >= 1:
+        log_level = logging.INFO
+
+    logging.basicConfig(level=log_level, format="%(levelname)s: %(message)s")
+
+
+def main():
+    args = _parse_args()
+    _setup_logging(args.verbose)
+
+    # Parse the options file
+    logger.info(f"Parsing options file: {args.options}")
+    options = parse_options_file(args.options)
+
+    # Resolve includes in each config file
+    set_of_config_files = set()
+    processed_files = []
+    for config_file in options.configs:
+        logger.info(f"Resolving includes for config file: {config_file}")
+        for resolved_config in resolve_includes(config_file, options, processed_files):
+            set_of_config_files.add(resolved_config)
+
+    # Parse all config files
+    list_of_configs = []
+    for config_file in set_of_config_files:
+        logger.info(f"Parsing config file: {config_file}")
+        config = parse_config_file(config_file)
+        list_of_configs.append(config)
+
+    __import__("pudb").set_trace()  # zz
     if args.command == "copy":
-        return cmd_copy(args, args.options)
+        logger.info("Starting copy operation")
+
+        # Create empty filemap tree
+        filemap_nodes = list()
+
+        # Process each config to extend the filemap tree
+        for config in list_of_configs:
+            for root_config_node in config.root_config_nodes:
+                # Skip config nodes that don't have a matching label
+                if root_config_node.label not in options.labels:
+                    logger.info(
+                        f"Skipping config node with label: {root_config_node.label} - not in requested labels"
+                    )
+                    continue
+
+                logger.info(
+                    f"Processing config node with label: {root_config_node.label}"
+                )
+                process_config(
+                    options.destination,
+                    config,
+                    filemap_nodes,
+                    options.get_ignore_patterns(),
+                )
+
+        # Copy files according to the filemap
+        logger.info("Copying files")
+        copied_files = copy_files(filemap_nodes)
+
+        # Optionally purge files that weren't copied
+        if options.purge:
+            logger.info("Purging files that weren't copied")
+            purge_files(copied_files)
+
+        logger.info("Copy operation completed successfully")
+
     elif args.command == "listlabels":
-        return cmd_listlabels(args, args.options)
+        logger.info("Listing all labels in configuration files")
+
+        # Output all labels present in the target directories of the config files
+        labels = set()
+        for config in list_of_configs:
+            # Collect all labels from root config nodes
+            for root_config_node in config.root_config_nodes:
+                labels.add(root_config_node.label)
+
+        # Print the labels
+        for label in sorted(labels):
+            print(label)
+
+        logger.info("Label listing completed successfully")
+
     else:
-        print(f"Unknown command: {args.command}")
-        parser.print_help()
+        print("Please specify a command. Use --help for more information.")
         return 1
+
+    return 0
 
 
 if __name__ == "__main__":

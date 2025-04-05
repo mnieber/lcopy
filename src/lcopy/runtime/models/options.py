@@ -4,17 +4,41 @@ import typing as T
 
 @dataclass
 class Options:
-    # List of config file paths
     configs: T.List[str]
-    # Destination directory for copied files
     destination: str
-    # Labels to include (filtering which sections of config to use)
     labels: T.List[str]
-    # Conflict resolution strategy (overwrite, skip, prompt)
     conflict: str
-    # Enable verbose output
     verbose: bool
-    # Purge files in destination that weren't copied
     purge: bool
-    # Enable dry run mode (no actual copying)
     dry_run: bool
+    default_ignore: bool
+    extra_ignore: T.List[str]
+
+    def get_ignore_patterns(self) -> T.List[str]:
+        """
+        Get the list of ignore patterns to apply when copying files.
+        Combines default ignore patterns with any extra ignore patterns.
+        """
+        ignore_patterns = []
+
+        # Add default ignore patterns if enabled
+        if self.default_ignore:
+            ignore_patterns.extend(
+                [
+                    "*.pyc",
+                    "__pycache__",
+                    ".git",
+                    ".gitignore",
+                    ".DS_Store",
+                    "*.swp",
+                    "*.swo",
+                    "*.bak",
+                    "*.tmp",
+                ]
+            )
+
+        # Add any extra ignore patterns
+        if self.extra_ignore:
+            ignore_patterns.extend(self.extra_ignore)
+
+        return ignore_patterns

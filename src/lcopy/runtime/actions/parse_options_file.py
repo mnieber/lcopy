@@ -2,6 +2,7 @@ import os
 import yaml
 
 from lcopy.runtime.models.options import Options
+from lcopy.configs.utils.normalize_path import normalize_path
 
 
 def parse_options_file(options_file: str) -> Options:
@@ -20,18 +21,10 @@ def parse_options_file(options_file: str) -> Options:
     configs = options_data.get("configs", [])
     resolved_configs = []
     for config in configs:
-        # If it's a relative path, resolve it relative to the options file directory
-        if not os.path.isabs(config):
-            config = os.path.join(options_dir, config)
-        resolved_configs.append(config)
+        resolved_configs.append(normalize_path(config, options_dir))
 
     # Resolve the destination path, expanding environment variables and home directory
-    destination = options_data.get("destination", "")
-    if destination:
-        # Expand environment variables
-        destination = os.path.expandvars(destination)
-        # Expand home directory (~)
-        destination = os.path.expanduser(destination)
+    destination = normalize_path(options_data.get("destination", ""))
 
     # Create the Options object
     options = Options(
@@ -42,6 +35,8 @@ def parse_options_file(options_file: str) -> Options:
         verbose=options_data.get("verbose", False),
         purge=options_data.get("purge", False),
         dry_run=options_data.get("dry_run", False),
+        default_ignore=options_data.get("default_ignore", True),
+        extra_ignore=options_data.get("extra_ignore", []),
     )
 
     return options

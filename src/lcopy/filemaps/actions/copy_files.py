@@ -43,7 +43,7 @@ def _process_node(node: FilemapNode, options: Optional[Options] = None) -> List[
     # Copy each file
     for filename in node.filenames:
         source_file = os.path.join(node.source_path, filename)
-        target_file = os.path.join(node.target_path, filename)
+        target_file = os.path.join(node.target_path, os.path.basename(filename))
 
         # Skip if source file doesn't exist
         if not os.path.exists(source_file):

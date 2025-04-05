@@ -1,110 +1,151 @@
 import os
 import re
 import glob
-from typing import List, Optional
+import logging
+import typing as T
 
-from lcopy.configs.models.config_node import ConfigNode
-from lcopy.filemaps.models.filemap_node import FilemapNode
-from lcopy.filemaps.actions.create_filemap_node import create_filemap_node
-from lcopy.runtime.models.options import Options
+from lcopy.configs.models import Config, RootConfigNode, ConfigNode
+from lcopy.filemaps.models import FilemapNode
+from lcopy.filemaps.rules.filter_filenames import filter_filenames
+from lcopy.configs.utils.normalize_path import normalize_path
+
+logger = logging.getLogger(__name__)
 
 
 def process_config(
-    config: ConfigNode,
-    file_map_tree: List[FilemapNode],
-    current_dir: str,
-    base_target_dir: str,
-    options: Optional[Options] = None,
+    destination,
+    config: Config,
+    filemap_nodes: list,
+    ignore_patterns: T.List[str] = None,
 ) -> None:
-    # Check if dirname pattern is a regex pattern (enclosed in parentheses)
-    is_regex = config.dirname_pattern.startswith(
-        "("
-    ) and config.dirname_pattern.endswith(")")
+    logger.debug(f"Processing config: {config.source_path}")
 
-    if is_regex:
-        # Extract the pattern without parentheses
-        pattern_str = config.dirname_pattern[1:-1]
+    if ignore_patterns is None:
+        ignore_patterns = []
 
-        # Find the variable part in the pattern (enclosed in square brackets)
-        # Only one variable part is allowed per pattern
-        var_parts = re.findall(r"\[(.*?)\]", pattern_str)
-        var_part = var_parts[0] if var_parts else None
+    # Process each root config node
+    for root_node in config.root_config_nodes:
+        _process_root_config_node(
+            destination, root_node, filemap_nodes, ignore_patterns
+        )
 
-        # Replace variable part with wildcard for glob matching
-        glob_pattern = re.sub(r"\[(.*?)\]", "*", pattern_str)
 
-        # Find all matching directories
-        matching_dirs = glob.glob(os.path.join(current_dir, glob_pattern))
+def _process_root_config_node(
+    destination,
+    root_node: RootConfigNode,
+    filemap_nodes: list,
+    ignore_patterns: T.List[str],
+) -> None:
+    logger.debug(f"Processing root config node with label: {root_node.label}")
 
-        for source_dir in matching_dirs:
-            # Extract the variable part value from the matched directory
-            rel_path = os.path.relpath(source_dir, current_dir)
+    # Process each child node
+    for child_node in root_node.child_nodes:
+        _process_config_node(destination, child_node, filemap_nodes, ignore_patterns)
 
-            # Create a regex pattern to extract variable value
-            target_subdir = ""
-            if var_part:
-                extract_pattern = pattern_str.replace(
-                    f"[{var_part}]", f"(?P<{var_part}>.*?)$"
-                )
-                match = re.match(extract_pattern, rel_path)
-                if match and var_part in match.groupdict():
-                    # Use the variable value as the target subdirectory
-                    target_subdir = match.group(var_part)
-                else:
-                    continue  # Skip if we can't extract the variable
-            else:
-                # If no variable part, use the relative path
-                target_subdir = rel_path
 
-            target_dir = os.path.join(base_target_dir, target_subdir)
-
-            # Create a simple non-regex config node for this match
-            simple_config = ConfigNode(
-                dirname_pattern=".",  # Use current directory
-                filename_patterns=config.filename_patterns,
-                child_nodes=config.child_nodes,
-            )
-
-            # Process the simple config with the matched directory as the current directory
-            process_config(
-                simple_config, file_map_tree, source_dir, target_dir, options
-            )
+def _process_config_node(
+    destination,
+    config_node: ConfigNode,
+    filemap_nodes: list,
+    ignore_patterns: T.List[str],
+) -> None:
+    # Check if this is a regex pattern
+    if _is_regex_pattern(config_node.dirname_pattern):
+        _process_regex_pattern(destination, config_node, filemap_nodes, ignore_patterns)
     else:
-        # Process this directory with the config's filename patterns
-        target_dir = os.path.join(base_target_dir, config.dirname_pattern)
-        _process_directory(current_dir, target_dir, config, file_map_tree)
-
-        # Process child config nodes
-        for child_config in config.child_nodes:
-            process_config(
-                child_config, file_map_tree, current_dir, target_dir, options
-            )
+        _process_simple_target_directory(
+            destination, config_node, filemap_nodes, ignore_patterns
+        )
 
 
-def _process_directory(
-    source_dir: str,
-    target_dir: str,
-    config: ConfigNode,
-    file_map_tree: List[FilemapNode],
+def _is_regex_pattern(dirname: str) -> bool:
+    # A regex pattern starts with '(' and ends with ')' and contains a variable part in '[]'
+    return (
+        dirname.startswith("(")
+        and dirname.endswith(")")
+        and "[" in dirname
+        and "]" in dirname
+    )
+
+
+def _process_regex_pattern(
+    destination,
+    config_node: ConfigNode,
+    filemap_nodes: list,
+    ignore_patterns: T.List[str],
 ) -> None:
-    # Skip if source directory doesn't exist
-    if not os.path.exists(source_dir):
+    # Extract the variable part from the regex pattern (between square brackets)
+    match = re.search(r"\[(.*?)\]", config_node.dirname_pattern)
+    if not match:
+        logger.warning(f"Invalid regex pattern: {config_node.dirname_pattern}")
         return
 
-    # Collect all matching files from the filename patterns
-    matching_files = []
-    for pattern in config.filename_patterns:
-        # Handle glob patterns in filenames
-        pattern_path = os.path.join(source_dir, pattern)
-        for file_path in glob.glob(pattern_path):
-            if os.path.isfile(file_path):
-                # Store relative path to source directory
-                rel_path = os.path.relpath(file_path, source_dir)
-                matching_files.append(rel_path)
+    # Convert the regex pattern to a glob pattern
+    # Replace the variable part with a wildcard
+    pattern_without_parens = config_node.dirname_pattern[1:-1]  # Remove ( and )
+    glob_pattern = re.sub(r"\[.*?\]", "*", pattern_without_parens)
 
-    # Create a filemap node if there are matching files
-    if matching_files:
-        filemap_node = create_filemap_node(
-            source_path=source_dir, target_path=target_dir, filenames=matching_files
+    # Join with the source path to create a full glob pattern
+    full_glob_pattern = os.path.join(config_node.source_path, glob_pattern)
+
+    # Find all matches of the glob pattern
+    matches = glob.glob(full_glob_pattern)
+
+    for match_path in matches:
+        # Create a new config node for this match
+        new_config_node = ConfigNode(
+            source_path=match_path,
+            dirname_pattern=os.path.basename(match_path),  # HACK!!!
+            filename_patterns=config_node.filename_patterns,
+            child_nodes=config_node.child_nodes,
         )
-        file_map_tree.append(filemap_node)
+
+        # Process this new config node as a simple target directory
+        _process_simple_target_directory(
+            destination, new_config_node, filemap_nodes, ignore_patterns
+        )
+
+
+def _process_simple_target_directory(
+    destination: str,
+    config_node: ConfigNode,
+    filemap_nodes: list,
+    ignore_patterns: T.List[str],
+) -> None:
+    # Determine the list of exclude patterns for this target directory
+    exclude_patterns = _determine_exclude_patterns(config_node)
+
+    # Determine the list of filenames in this target directory
+    filenames = filter_filenames(
+        config_node.filename_patterns,
+        config_node.source_path,
+        exclude_patterns,
+        ignore_patterns,
+    )
+
+    # Create a filemap node for this target directory
+    target_path = normalize_path(config_node.dirname_pattern, destination)
+
+    # Create a new filemap node
+    if filenames:
+        filemap_node = FilemapNode(
+            target_path=target_path,
+            source_path=config_node.source_path,
+            filenames=filenames,
+        )
+        filemap_nodes.append(filemap_node)
+
+    # Process child nodes recursively
+    for child_node in config_node.child_nodes:
+        _process_config_node(target_path, child_node, filemap_nodes, ignore_patterns)
+
+
+def _determine_exclude_patterns(config_node: ConfigNode) -> T.List[str]:
+    exclude_patterns = []
+
+    for pattern in config_node.filename_patterns:
+        if pattern.startswith("!"):
+            # Remove the exclamation mark and add to exclude patterns
+            exclude_patterns.append(pattern[1:])
+
+    return exclude_patterns
