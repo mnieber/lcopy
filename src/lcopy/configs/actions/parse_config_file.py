@@ -1,131 +1,90 @@
-import os
 import logging
 import yaml
 import typing as T
-
-from lcopy.configs.models import Config, RootConfigNode, ConfigNode
+from pathlib import Path
+from lcopy.configs.models.config import Config
+from lcopy.files.utils.normalize_path import normalize_path
+from lcopy.configs.actions.parse_target_node import parse_target_node
 
 logger = logging.getLogger(__name__)
 
 
-def parse_config_file(config_file: str) -> Config:
-    """
-    Parses a config file and returns a Config object with the parsed configuration.
+def parse_config_file(
+    config_file: str,
+    config_file_skip_list: T.List[str] = None,
+    recursive: bool = True,
+    labels: T.List[str] = None,
+) -> T.List[Config]:
+    # Initialize skip list if not provided
+    if config_file_skip_list is None:
+        config_file_skip_list = []
 
-    Args:
-        config_file: Path to the config file
+    # Normalize path
+    normalized_config_file = normalize_path(config_file)
 
-    Returns:
-        Config object with the parsed configuration
-    """
-    logger.debug(f"Parsing config file: {config_file}")
+    # Skip if already processed
+    if normalized_config_file in config_file_skip_list:
+        logger.info(f"Skipping already processed config file: {normalized_config_file}")
+        return []
 
-    # Create a new Config object with the source path set to the config file
-    config = Config(source_path=config_file)
+    # Add to skip list
+    config_file_skip_list.append(normalized_config_file)
 
+    logger.info(f"Parsing config file: {normalized_config_file}")
+
+    # Read the config file
     try:
-        # Read and parse the YAML file
-        with open(config_file, "r") as f:
-            config_data = yaml.safe_load(f)
-
-        # If the file is empty or not a valid YAML file, return the empty config
-        if not config_data:
-            logger.warning(
-                f"Config file is empty or not a valid YAML file: {config_file}"
-            )
-            return config
-
-        # Parse include directives
-        if "include" in config_data and isinstance(config_data["include"], list):
-            config.include = config_data["include"]
-
-        # Get the directory of the config file to resolve relative paths
-        config_dir = os.path.dirname(config_file)
-
-        # Parse target directives
-        if "target" in config_data and isinstance(config_data["target"], dict):
-            # Process each label defined in the target section
-            for label, target_data in config_data["target"].items():
-                # Create a root config node for each label
-                root_node = RootConfigNode(source_path=config_dir, label=label)
-
-                # Process the target data for this label
-                if target_data and isinstance(target_data, dict):
-                    # Each key in the target data is a target directory
-                    for target_dir, dir_data in target_data.items():
-                        # Process this target directory and its children
-                        child_nodes = _parse_target_directory(
-                            target_dir, dir_data, config_dir
-                        )
-                        root_node.child_nodes.extend(child_nodes)
-
-                # Add the root node to the config
-                config.root_config_nodes.append(root_node)
-
+        with open(normalized_config_file, "r") as f:
+            config_data = yaml.safe_load(f) or {}
     except FileNotFoundError:
-        logger.error(f"Config file not found: {config_file}")
+        logger.error(f"Config file not found: {normalized_config_file}")
+        return []
     except yaml.YAMLError as e:
-        logger.error(f"Error parsing YAML in {config_file}: {e}")
-    except Exception as e:
-        logger.error(f"Error parsing config file {config_file}: {e}")
+        logger.error(f"Error parsing config file: {e}")
+        return []
 
-    return config
+    # Get source directory from config file path
+    source_dirname = str(Path(normalized_config_file).parent)
+    logger.info(f"Source directory: {source_dirname}")
 
+    # Create Config instance
+    config = Config(
+        source_dirname=source_dirname,
+        include_fns=config_data.get("include_fns", []),
+        target_nodes=[],
+    )
 
-def _parse_target_directory(
-    target_dir: str, dir_data: dict, base_path: str
-) -> T.List[ConfigNode]:
-    """
-    Parse a target directory configuration and its children.
+    # Parse target nodes
+    targets_data = config_data.get("targets", {})
+    for label, targets_json in targets_data.items():
+        if label not in labels:
+            continue
 
-    Args:
-        target_dir: The target directory name or pattern
-        dir_data: The configuration data for this directory
-        base_path: The base path for resolving relative paths
+        for target_basename, target_node_json in targets_json.items():
+            # Parse target node
+            target_nodes = parse_target_node(
+                target_basename=target_basename,
+                source_dirname=source_dirname,
+                target_node_json=target_node_json,
+            )
 
-    Returns:
-        List of ConfigNode objects representing this directory and its children
-    """
-    result = []
+            # Add to config if not None
+            if target_nodes:
+                config.target_nodes.extend(target_nodes)
 
-    # Process directory data
-    if isinstance(dir_data, dict):
-        # Create a config node for this directory
-        node = ConfigNode(
-            source_path=base_path,
-            dirname_pattern=target_dir,
-            filename_patterns=_extract_file_patterns(dir_data),
-        )
+    configs = [config]
 
-        # Process child directories recursively
-        for child_dir, child_data in dir_data.items():
-            # Skip entries that are not dictionaries (like file patterns)
-            if not isinstance(child_data, dict):
-                continue
+    # Process included config files if recursive is enabled
+    if recursive and config.include_fns:
+        for include_fn in config.include_fns:
+            # Resolve path relative to source directory
+            include_path = normalize_path(include_fn, base_path=source_dirname)
+            included_configs = parse_config_file(
+                config_file=include_path,
+                config_file_skip_list=config_file_skip_list,
+                recursive=recursive,
+                labels=labels,
+            )
+            configs.extend(included_configs)
 
-            # For each child directory, process it recursively
-            child_nodes = _parse_target_directory(child_dir, child_data, base_path)
-            node.child_nodes.extend(child_nodes)
-
-        result.append(node)
-
-    return result
-
-
-def _extract_file_patterns(dir_data: dict) -> T.List[str]:
-    """
-    Extract file patterns from directory data.
-
-    Args:
-        dir_data: The directory data to extract patterns from
-
-    Returns:
-        List of file patterns
-    """
-    patterns = []
-
-    # Look for a list of file patterns at the "." key
-    if "." in dir_data and isinstance(dir_data["."], list):
-        patterns.extend(dir_data["."])
-
-    return patterns
+    return configs

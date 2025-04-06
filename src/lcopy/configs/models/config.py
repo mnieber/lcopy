@@ -1,14 +1,12 @@
 from dataclassy import dataclass
 import typing as T
 
-# Forward references for type hints
 if T.TYPE_CHECKING:
-    from lcopy.configs.models.root_config_node import RootConfigNode
+    from lcopy.configs.models.target_node import TargetNode
 
 
 @dataclass
 class Config:
-    # List of other lcopy configs to include
-    source_path: str
-    include: T.List[str] = []
-    root_config_nodes: T.List["RootConfigNode"] = []
+    source_dirname: str
+    target_nodes: T.List["TargetNode"] = []
+    include_fns: T.List[str] = []

@@ -1,30 +1,27 @@
 #!/usr/bin/env python3
+"""
+lcopy - A tool for copying files based on configuration
+"""
+
 import argparse
 import logging
 import sys
 
 from lcopy.runtime.actions.parse_options_file import parse_options_file
-from lcopy.configs.rules.resolve_includes import resolve_includes
 from lcopy.configs.actions.parse_config_file import parse_config_file
-from lcopy.configs.actions.process_config import process_config
-from lcopy.filemaps.actions.copy_files import copy_files
-from lcopy.filemaps.actions.purge_files import purge_files
+from lcopy.files.actions.copy_files import copy_files
+from lcopy.files.actions.purge_files import purge_files
+from lcopy.runtime.rules.get_ignore_patterns import get_ignore_patterns
 
 logger = logging.getLogger(__name__)
 
 
 def _parse_args():
     parser = argparse.ArgumentParser(
-        description="lcopy - A tool for copying files according to configuration files"
+        description="lcopy - A tool for copying files based on configuration"
     )
-
-    # Global arguments
     parser.add_argument("--options", required=True, help="Path to options file")
-    parser.add_argument(
-        "-v", "--verbose", action="count", default=0, help="Increase verbosity"
-    )
 
-    # Subcommands
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # Copy command
@@ -34,7 +31,12 @@ def _parse_args():
 
     # Listlabels command
     listlabels_parser = subparsers.add_parser(
-        "listlabels", help="List all labels in the configuration files"
+        "listlabels", help="List all available labels in config files"
+    )
+
+    # Global arguments
+    parser.add_argument(
+        "-v", "--verbose", action="count", default=0, help="Increase verbosity"
     )
 
     return parser.parse_args()
@@ -55,78 +57,65 @@ def main():
     _setup_logging(args.verbose)
 
     # Parse the options file
-    logger.info(f"Parsing options file: {args.options}")
-    options = parse_options_file(args.options)
+    options = None
+    if hasattr(args, "options") and args.options:
+        logger.info(f"Parsing options file: {args.options}")
+        options = parse_options_file(args.options)
 
-    # Resolve includes in each config file
-    set_of_config_files = set()
-    processed_files = []
-    for config_file in options.configs:
-        logger.info(f"Resolving includes for config file: {config_file}")
-        for resolved_config in resolve_includes(config_file, options, processed_files):
-            set_of_config_files.add(resolved_config)
-
-    # Parse all config files
-    list_of_configs = []
-    for config_file in set_of_config_files:
-        logger.info(f"Parsing config file: {config_file}")
-        config = parse_config_file(config_file)
-        list_of_configs.append(config)
-
-    __import__("pudb").set_trace()  # zz
     if args.command == "copy":
-        logger.info("Starting copy operation")
+        logger.info("Running copy command")
 
-        # Create empty filemap tree
-        filemap_nodes = list()
+        # Parse each config file specified in options
+        # parse_config_file will handle the target node parsing internally
+        configs = []
+        config_file_skip_list = []
+        for config_fn in options.config_fns:
+            config_list = parse_config_file(
+                config_file=config_fn,
+                labels=options.labels,
+                config_file_skip_list=config_file_skip_list,
+            )
+            configs.extend(config_list)
 
-        # Process each config to extend the filemap tree
-        for config in list_of_configs:
-            for root_config_node in config.root_config_nodes:
-                # Skip config nodes that don't have a matching label
-                if root_config_node.label not in options.labels:
-                    logger.info(
-                        f"Skipping config node with label: {root_config_node.label} - not in requested labels"
-                    )
-                    continue
+        # Collect all target nodes from the configs
+        target_nodes = []
+        for config in configs:
+            target_nodes.extend(config.target_nodes)
 
-                logger.info(
-                    f"Processing config node with label: {root_config_node.label}"
-                )
-                process_config(
-                    options.destination,
-                    config,
-                    filemap_nodes,
-                    options.get_ignore_patterns(),
-                )
+        # Copy the files
+        copied_files = copy_files(
+            destination=options.destination,
+            target_nodes=target_nodes,
+            overwrite=options.conflict,
+            ignore_patterns=get_ignore_patterns(
+                options.default_ignore, options.extra_ignore
+            ),
+        )
 
-        # Copy files according to the filemap
-        logger.info("Copying files")
-        copied_files = copy_files(filemap_nodes)
-
-        # Optionally purge files that weren't copied
+        # Purge files if enabled
         if options.purge:
-            logger.info("Purging files that weren't copied")
-            purge_files(copied_files)
+            purge_files(destination=options.destination, files_to_keep=copied_files)
 
-        logger.info("Copy operation completed successfully")
+        # Output summary of copy operation
+        print(f"Copied {len(copied_files)} files to {options.destination}")
+        if options.verbose > 0:
+            for file in copied_files:
+                print(f"  {file}")
 
     elif args.command == "listlabels":
-        logger.info("Listing all labels in configuration files")
+        logger.info("Running listlabels command")
+        from lcopy.configs.rules.get_list_of_labels import get_list_of_labels
 
-        # Output all labels present in the target directories of the config files
-        labels = set()
-        for config in list_of_configs:
-            # Collect all labels from root config nodes
-            for root_config_node in config.root_config_nodes:
-                labels.add(root_config_node.label)
+        # Parse config files and extract labels
+        all_labels = set()
+        for config_fn in options.config_fns:
+            labels = get_list_of_labels(config_file=config_fn)
+            all_labels.update(labels)
 
-        # Print the labels
-        for label in sorted(labels):
-            print(label)
-
-        logger.info("Label listing completed successfully")
-
+        # Output labels
+        print("Available labels:")
+        for label in sorted(all_labels):
+            print(f"  {label}")
     else:
         print("Please specify a command. Use --help for more information.")
         return 1
