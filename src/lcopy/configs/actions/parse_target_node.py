@@ -72,62 +72,47 @@ def _handle_regex_pattern(
     target_node_json: dict,
     labels: T.List[str] = None,
 ) -> T.List[TargetNode]:
-    # Extract variable name from pattern (remove parentheses)
-    variable_name = target_basename[1:-1]
+    # Extract regex pattern from target_basename (remove parentheses)
+    regex_pattern = target_basename[1:-1]
 
-    # The pattern is now directly in the variable name
-    # For example: scenarios/<scenario_name>
-    glob_pattern = variable_name.replace(f"<{variable_name.split('/')[-1][1:-1]}>", "*")
+    # Find the variable part
+    variable_name = _extract_variable_from_regex(regex_pattern)
+    if not variable_name:
+        raise NoVariableInRegexPattern()
 
-    # Create full glob pattern
-    full_glob_pattern = normalize_path(glob_pattern, base_path=source_dirname)
-
-    # Find matching paths
+    # Create glob pattern and find matching paths
+    full_glob_pattern = _create_glob_pattern(
+        regex_pattern, variable_name, source_dirname
+    )
     matching_paths = glob.glob(full_glob_pattern)
 
     if not matching_paths:
         logger.debug(f"No matches found for glob pattern: {full_glob_pattern}")
         return []
 
-    # Create regex pattern to extract variable value
-    # Convert the glob pattern to a regex pattern by escaping special chars and replacing * with capture group
-    regex_pattern = re.escape(variable_name).replace("\\*", ".*")
-    # Replace the variable placeholder with a named capture group
-    var_placeholder = re.escape(f"<{variable_name.split('/')[-1][1:-1]}>")
-    regex_pattern = regex_pattern.replace(
-        var_placeholder, f"(?P<{variable_name.split('/')[-1][1:-1]}>.*)"
-    )
-    regex = re.compile(regex_pattern)
+    # Create regex for extracting variable values
+    regex = _create_regex_matcher(regex_pattern, variable_name)
 
     # Process each matching path
     child_nodes = []
     for path in matching_paths:
-        # Extract relative path from source_dirname
+        # Extract relative path and variable value
         rel_path = os.path.relpath(path, source_dirname)
-
-        # Extract variable value using regex
         match = regex.match(rel_path)
         if not match:
             continue
 
-        # Get the variable value - use the last component of the path if regex fails
-        if variable_name.split("/")[-1][1:-1] in match.groupdict():
-            target_basename = match.group(variable_name.split("/")[-1][1:-1])
-        else:
-            target_basename = os.path.basename(path)
+        # Get target basename
+        target_basename = (
+            match.group(variable_name)
+            if variable_name in match.groupdict()
+            else os.path.basename(path)
+        )
 
-        # Process the child node JSON structure
-        include_patterns = []
-        exclude_patterns = []
+        # Get patterns from JSON
+        include_patterns, exclude_patterns = _get_patterns_from_json(target_node_json)
 
-        for key, value in target_node_json.items():
-            if isinstance(value, bool):
-                if value:
-                    include_patterns.append(key)
-                else:
-                    exclude_patterns.append(f"!{key}")
-
-        # Create a new target node for this match
+        # Create the target node
         child_node = TargetNode(
             source_dirname=path,
             target_basename=target_basename,
@@ -136,7 +121,6 @@ def _handle_regex_pattern(
             labels=labels or [],
         )
 
-        # Add this node to our result list
         child_nodes.append(child_node)
 
         # Process nested levels recursively
@@ -153,3 +137,46 @@ def _handle_regex_pattern(
                     child_node.child_nodes.extend(more_child_nodes)
 
     return child_nodes
+
+
+def _extract_variable_from_regex(regex_pattern: str) -> T.Optional[str]:
+    """Extract the variable part from a regex pattern."""
+    variable_match = re.search(r"<([^>]+)>", regex_pattern)
+    return variable_match.group(1) if variable_match else None
+
+
+def _create_glob_pattern(
+    regex_pattern: str, variable_name: str, source_dirname: str
+) -> str:
+    """Create a glob pattern from a regex pattern by replacing variable with wildcard."""
+    glob_pattern = regex_pattern.replace(f"<{variable_name}>", "*")
+    return normalize_path(glob_pattern, base_path=source_dirname)
+
+
+def _create_regex_matcher(regex_pattern: str, variable_name: str) -> re.Pattern:
+    """Create a regex pattern to extract variable values."""
+    regex_expr = re.escape(regex_pattern).replace("\\*", ".*")
+    var_placeholder = re.escape(f"<{variable_name}>")
+    regex_expr = regex_expr.replace(var_placeholder, f"(?P<{variable_name}>.*)")
+    return re.compile(regex_expr)
+
+
+def _get_patterns_from_json(
+    target_node_json: dict,
+) -> T.Tuple[T.List[str], T.List[str]]:
+    """Extract include and exclude patterns from target node JSON."""
+    include_patterns = []
+    exclude_patterns = []
+
+    for key, value in target_node_json.items():
+        if isinstance(value, bool):
+            if value:
+                include_patterns.append(key)
+            else:
+                exclude_patterns.append(f"!{key}")
+
+    return include_patterns, exclude_patterns
+
+
+class NoVariableInRegexPattern(Exception):
+    pass
