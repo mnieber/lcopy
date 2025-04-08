@@ -3,7 +3,7 @@ name = "lcopy"
 description = "Copy from multiple source directories using labels"
 version = "1.0.0"
 readme = "README.md"
-dependencies = ["click", "pyyaml"]
+dependencies = ["pyyaml", "dataclassy"]
 
 [project.scripts]
 lcopy = "lcopy.cli:cli"

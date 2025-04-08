@@ -2,9 +2,10 @@ import logging
 import os
 import shutil
 import typing as T
+
 from lcopy.configs.models.target_node import TargetNode
-from lcopy.files.utils.normalize_path import normalize_path
 from lcopy.files.rules.get_filtered_files import get_filtered_files
+from lcopy.files.utils.normalize_path import normalize_path
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +105,14 @@ def _process_target_node(
 
             # Copy the file
             if _copy_file(src_file, dest_file, overwrite, dry_run):
-                copied_files.append(dest_file)
+                if os.path.isdir(dest_file):
+                    # If it's a directory, add the entire directory to copied_files
+                    for root, _, files in os.walk(dest_file):
+                        for file in files:
+                            copied_files.append(os.path.join(root, file))
+                else:
+                    # If it's a file, add the file to copied_files
+                    copied_files.append(dest_file)
 
     # Process child nodes
     for child_node in target_node.child_nodes:
@@ -131,11 +139,6 @@ def _expand_glob_pattern(pattern: str) -> T.List[str]:
 
 
 def _copy_file(src_file: str, dest_file: str, overwrite: str, dry_run: bool) -> bool:
-    # Check if source is a file
-    if not os.path.isfile(src_file):
-        logger.debug(f"Not a file, skipping: {src_file}")
-        return False
-
     # Check if destination file exists
     if os.path.exists(dest_file):
         if overwrite == "skip":
@@ -146,10 +149,21 @@ def _copy_file(src_file: str, dest_file: str, overwrite: str, dry_run: bool) -> 
                 logger.info(f"Overwriting file: {dest_file}")
             else:
                 logger.info(f"Would overwrite file: {dest_file}")
-        elif overwrite == "prompt":
-            # In non-interactive mode, default to skip
-            logger.warning(f"File exists, prompt not supported, skipping: {dest_file}")
-            return False
+        elif overwrite == "prompt" or os.path.isdir(src_file):
+            # Check if we're in an interactive environment
+            try:
+                # Prompt user for confirmation
+                response = input(f"File exists: {dest_file}. Overwrite? (y/N): ")
+                if response.lower() != "y":
+                    logger.info(f"Skipping file: {dest_file}")
+                    return False
+                logger.info(f"Overwriting file: {dest_file}")
+            except (EOFError, KeyboardInterrupt):
+                # Non-interactive environment fallback
+                logger.warning(
+                    f"File exists, prompt not supported, skipping: {dest_file}"
+                )
+                return False
 
     # Create parent directories if needed
     dest_dir = os.path.dirname(dest_file)
@@ -157,15 +171,25 @@ def _copy_file(src_file: str, dest_file: str, overwrite: str, dry_run: bool) -> 
         logger.debug(f"Creating directory: {dest_dir}")
         os.makedirs(dest_dir, exist_ok=True)
 
+    if os.path.isdir(src_file) and os.path.exists(dest_file):
+        __import__("pudb").set_trace()  # zz
+        shutil.rmtree(dest_file)
+
     # Copy the file
+    what = "file" if os.path.isfile(src_file) else "directory"
     if not dry_run:
         try:
-            logger.info(f"Copying file: {src_file} -> {dest_file}")
-            shutil.copy2(src_file, dest_file)
+            logger.info(f"Copying {what}: {src_file} -> {dest_file}")
+            if os.path.isdir(src_file):
+                __import__("pudb").set_trace()  # zz
+                shutil.copytree(src_file, dest_file)
+            else:
+                shutil.copy2(src_file, dest_file)
+
             return True
         except (IOError, OSError) as e:
-            logger.error(f"Error copying file {src_file} to {dest_file}: {e}")
+            logger.error(f"Error copying {what} {src_file} to {dest_file}: {e}")
             return False
     else:
-        logger.info(f"Would copy file: {src_file} -> {dest_file}")
+        logger.info(f"Would copy {what}: {src_file} -> {dest_file}")
         return True
