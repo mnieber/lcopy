@@ -1,0 +1,5 @@
+targets:
+  generate-code:
+    code:
+      lcopy:
+        src/lcopy/*: true

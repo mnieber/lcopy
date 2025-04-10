@@ -1,6 +1,7 @@
-import os
 import logging
+import os
 import typing as T
+
 from lcopy.files.utils.normalize_path import normalize_path
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,8 @@ def purge_files(
         logger.error(f"Destination is not a directory: {destination}")
         return
 
-    logger.info(f"Purging files from {destination}")
+    action_verb = "Would purge" if dry_run else "Purging"
+    logger.info(f"{action_verb} files from {destination}")
 
     # Create a set of normalized paths to keep for faster lookups
     files_to_keep_set = set(normalize_path(path) for path in files_to_keep)

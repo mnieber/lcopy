@@ -7,10 +7,10 @@ import argparse
 import logging
 import sys
 
-from lcopy.runtime.actions.parse_options_file import parse_options_file
 from lcopy.configs.actions.parse_config_file import parse_config_file
 from lcopy.files.actions.copy_files import copy_files
 from lcopy.files.actions.purge_files import purge_files
+from lcopy.runtime.actions.parse_options_file import parse_options_file
 from lcopy.runtime.rules.get_ignore_patterns import get_ignore_patterns
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,11 @@ def _parse_args():
     # Copy command
     copy_parser = subparsers.add_parser(
         "copy", help="Copy files according to configuration"
+    )
+    copy_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be copied without actually copying",
     )
 
     # Listlabels command
@@ -65,6 +70,11 @@ def main():
     if args.command == "copy":
         logger.info("Running copy command")
 
+        # Override dry_run option from command line if specified
+        if hasattr(args, "dry_run") and args.dry_run:
+            options.dry_run = True
+            logger.info("Dry run mode enabled from command line")
+
         # Parse each config file specified in options
         # parse_config_file will handle the target node parsing internally
         configs = []
@@ -74,6 +84,9 @@ def main():
                 config_file=config_fn,
                 labels=options.labels,
                 config_file_skip_list=config_file_skip_list,
+                ignore_patterns=get_ignore_patterns(
+                    options.default_ignore, options.extra_ignore
+                ),
             )
             configs.extend(config_list)
 
@@ -87,17 +100,21 @@ def main():
             destination=options.destination,
             target_nodes=target_nodes,
             overwrite=options.conflict,
-            ignore_patterns=get_ignore_patterns(
-                options.default_ignore, options.extra_ignore
-            ),
+            dry_run=options.dry_run,
         )
 
         # Purge files if enabled
         if options.purge:
-            purge_files(destination=options.destination, files_to_keep=copied_files)
+            purge_files(
+                destination=options.destination,
+                files_to_keep=copied_files,
+                dry_run=options.dry_run,
+            )
 
         # Output summary of copy operation
-        print(f"Copied {len(copied_files)} files to {options.destination}")
+        print(
+            f"{'Would copy' if options.dry_run else 'Copied'} {len(copied_files)} files to {options.destination}"
+        )
         if options.verbose > 0:
             for file in copied_files:
                 print(f"  {file}")

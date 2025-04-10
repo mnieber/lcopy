@@ -1,10 +1,11 @@
 import logging
-import yaml
 import typing as T
 from pathlib import Path
+
+import yaml
+from lcopy.configs.actions.parse_target_node import parse_target_node
 from lcopy.configs.models.config import Config
 from lcopy.files.utils.normalize_path import normalize_path
-from lcopy.configs.actions.parse_target_node import parse_target_node
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,7 @@ def parse_config_file(
     config_file_skip_list: T.List[str] = None,
     recursive: bool = True,
     labels: T.List[str] = None,
+    ignore_patterns: T.List[str] = None,
 ) -> T.List[Config]:
     # Initialize skip list if not provided
     if config_file_skip_list is None:
@@ -66,6 +68,7 @@ def parse_config_file(
                 target_basename=target_basename,
                 source_dirname=source_dirname,
                 target_node_json=target_node_json,
+                ignore_patterns=ignore_patterns,
             )
 
             # Add to config if not None

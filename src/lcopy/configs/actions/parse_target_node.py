@@ -1,9 +1,11 @@
+import glob
 import logging
 import os
-import glob
 import re
 import typing as T
+
 from lcopy.configs.models.target_node import TargetNode
+from lcopy.files.rules.get_filtered_files import get_filtered_files
 from lcopy.files.utils.normalize_path import normalize_path
 
 logger = logging.getLogger(__name__)
@@ -14,25 +16,26 @@ def parse_target_node(
     source_dirname: str,
     target_node_json: dict,
     labels: T.List[str] = None,
+    ignore_patterns: T.List[str] = None,
 ) -> T.List[TargetNode]:
-    # Initialize include and exclude patterns
-    include_patterns = []
-    exclude_patterns = []
-
     # Check if target_basename is a regex pattern (enclosed in parentheses)
     if target_basename.startswith("(") and target_basename.endswith(")"):
         return _handle_regex_pattern(
-            source_dirname, target_basename, target_node_json, labels
+            source_dirname, target_basename, target_node_json, labels, ignore_patterns
         )
 
     # Create target node instance
     target_node = TargetNode(
         source_dirname=source_dirname,
         target_basename=target_basename,
-        filename_patterns=[],  # We'll populate this later
+        filename_patterns=[],  # We'll populate this with concrete files
         child_nodes=[],
         labels=labels or [],
     )
+
+    # Collect include and exclude patterns
+    include_patterns = []
+    exclude_patterns = []
 
     # Process each entry in the target_node_json
     for key, value in target_node_json.items():
@@ -42,8 +45,7 @@ def parse_target_node(
             if value:
                 include_patterns.append(key)
             else:
-                # Add to exclude patterns with ! prefix
-                exclude_patterns.append(f"!{key}")
+                exclude_patterns.append(key)
         elif isinstance(value, dict):
             # This is a child node
             child_nodes = parse_target_node(
@@ -51,19 +53,92 @@ def parse_target_node(
                 source_dirname=source_dirname,
                 target_node_json=value,
                 labels=labels,
+                ignore_patterns=ignore_patterns,
             )
 
             # Add to parent node if not None
             if child_nodes:
                 target_node.child_nodes.extend(child_nodes)
 
-    # Combine include and exclude patterns
-    target_node.filename_patterns = include_patterns + exclude_patterns
+    # Resolve patterns to concrete file paths
+    all_files = _expand_patterns(include_patterns, source_dirname)
+
+    # Apply exclude patterns and ignore patterns
+    if all_files:
+        filtered_files = get_filtered_files(
+            files=all_files,
+            source_dirname=source_dirname,
+            ignore_patterns=ignore_patterns or [],
+            exclude_patterns=exclude_patterns,
+        )
+
+        # Extract directories to be processed separately
+        directories = [f for f in filtered_files if os.path.isdir(f)]
+        files = [f for f in filtered_files if not os.path.isdir(f)]
+
+        # Store concrete file paths in the target node
+        target_node.filename_patterns = files
+
+        # Handle directories by creating additional nodes to process
+        if directories:
+            child_nodes = _handle_directories(
+                directories, source_dirname, labels, ignore_patterns
+            )
+            if child_nodes:
+                target_node.child_nodes.extend(child_nodes)
 
     logger.debug(
-        f"Created target node: {target_basename} with {len(target_node.filename_patterns)} patterns"
+        f"Created target node: {target_basename} with {len(target_node.filename_patterns)} files"
     )
     return [target_node]
+
+
+def _expand_patterns(patterns: T.List[str], source_dirname: str) -> T.List[str]:
+    """Expand all patterns to concrete file paths."""
+    all_files = []
+    for pattern in patterns:
+        # Join source directory with pattern
+        full_pattern = normalize_path(pattern, base_path=source_dirname)
+        # Expand glob pattern
+        matching_files = [f for f in glob.glob(full_pattern, recursive=True)]
+        all_files.extend(matching_files)
+    return all_files
+
+
+def _handle_directories(
+    directories: T.List[str],
+    parent_source_dirname: str,
+    labels: T.List[str] = None,
+    ignore_patterns: T.List[str] = None,
+) -> T.List[TargetNode]:
+    """
+    Process directories by creating appropriate JSON structures
+    and parsing them recursively through the main parse_target_node function.
+    """
+    child_nodes = []
+
+    for directory in directories:
+        dir_basename = os.path.basename(directory)
+
+        # Create a simple JSON structure with "*" pattern to include all files
+        target_node_json = {"*": True}
+
+        # Process this directory through parse_target_node
+        directory_nodes = parse_target_node(
+            target_basename=dir_basename,
+            source_dirname=directory,
+            target_node_json=target_node_json,
+            labels=labels,
+            ignore_patterns=ignore_patterns,
+        )
+
+        if directory_nodes:
+            child_nodes.extend(directory_nodes)
+            logger.debug(
+                f"Created directory child node: {dir_basename} through recursive processing"
+            )
+
+    return child_nodes
 
 
 def _handle_regex_pattern(
@@ -71,6 +146,7 @@ def _handle_regex_pattern(
     target_basename: str,
     target_node_json: dict,
     labels: T.List[str] = None,
+    ignore_patterns: T.List[str] = None,
 ) -> T.List[TargetNode]:
     # Extract regex pattern from target_basename (remove parentheses)
     regex_pattern = target_basename[1:-1]
@@ -109,32 +185,18 @@ def _handle_regex_pattern(
             else os.path.basename(path)
         )
 
-        # Get patterns from JSON
-        include_patterns, exclude_patterns = _get_patterns_from_json(target_node_json)
-
-        # Create the target node
-        child_node = TargetNode(
-            source_dirname=path,
+        # Process this path recursively through parse_target_node
+        # The target_node_json will be processed the same as any other node
+        more_child_nodes = parse_target_node(
             target_basename=target_basename,
-            filename_patterns=include_patterns + exclude_patterns,
-            child_nodes=[],
-            labels=labels or [],
+            source_dirname=path,
+            target_node_json=target_node_json,
+            labels=labels,
+            ignore_patterns=ignore_patterns,
         )
 
-        child_nodes.append(child_node)
-
-        # Process nested levels recursively
-        for key, value in target_node_json.items():
-            if isinstance(value, dict):
-                more_child_nodes = parse_target_node(
-                    target_basename=key,
-                    source_dirname=path,
-                    target_node_json=value,
-                    labels=labels,
-                )
-
-                if more_child_nodes:
-                    child_node.child_nodes.extend(more_child_nodes)
+        if more_child_nodes:
+            child_nodes.extend(more_child_nodes)
 
     return child_nodes
 
@@ -159,23 +221,6 @@ def _create_regex_matcher(regex_pattern: str, variable_name: str) -> re.Pattern:
     var_placeholder = re.escape(f"<{variable_name}>")
     regex_expr = regex_expr.replace(var_placeholder, f"(?P<{variable_name}>.*)")
     return re.compile(regex_expr)
-
-
-def _get_patterns_from_json(
-    target_node_json: dict,
-) -> T.Tuple[T.List[str], T.List[str]]:
-    """Extract include and exclude patterns from target node JSON."""
-    include_patterns = []
-    exclude_patterns = []
-
-    for key, value in target_node_json.items():
-        if isinstance(value, bool):
-            if value:
-                include_patterns.append(key)
-            else:
-                exclude_patterns.append(f"!{key}")
-
-    return include_patterns, exclude_patterns
 
 
 class NoVariableInRegexPattern(Exception):
