@@ -152,9 +152,7 @@ def _handle_regex_pattern(
     regex_pattern = target_basename[1:-1]
 
     # Find the variable part
-    variable_name = _extract_variable_from_regex(regex_pattern)
-    if not variable_name:
-        raise NoVariableInRegexPattern()
+    variable_name = _extract_variable_from_regex(regex_pattern) or ""
 
     # Create glob pattern and find matching paths
     full_glob_pattern = _create_glob_pattern(
@@ -221,7 +219,3 @@ def _create_regex_matcher(regex_pattern: str, variable_name: str) -> re.Pattern:
     var_placeholder = re.escape(f"<{variable_name}>")
     regex_expr = regex_expr.replace(var_placeholder, f"(?P<{variable_name}>.*)")
     return re.compile(regex_expr)
-
-
-class NoVariableInRegexPattern(Exception):
-    pass
