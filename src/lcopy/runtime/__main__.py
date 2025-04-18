@@ -82,11 +82,11 @@ def main():
         for config_fn in options.config_fns:
             config_list = parse_config_file(
                 config_file=config_fn,
-                labels=options.labels,
                 config_file_skip_list=config_file_skip_list,
                 ignore_patterns=get_ignore_patterns(
                     options.default_ignore, options.extra_ignore
                 ),
+                labels=options.labels,
             )
             configs.extend(config_list)
 

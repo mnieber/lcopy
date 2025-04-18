@@ -12,10 +12,10 @@ logger = logging.getLogger(__name__)
 
 def parse_config_file(
     config_file: str,
-    config_file_skip_list: T.List[str] = None,
+    config_file_skip_list: T.List[str],
+    ignore_patterns: T.List[str],
     recursive: bool = True,
     labels: T.List[str] = None,
-    ignore_patterns: T.List[str] = None,
 ) -> T.List[Config]:
     # Initialize skip list if not provided
     if config_file_skip_list is None:
@@ -85,6 +85,7 @@ def parse_config_file(
             included_configs = parse_config_file(
                 config_file=include_path,
                 config_file_skip_list=config_file_skip_list,
+                ignore_patterns=ignore_patterns,
                 recursive=recursive,
                 labels=labels,
             )
