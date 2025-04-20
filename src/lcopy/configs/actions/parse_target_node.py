@@ -31,6 +31,7 @@ def parse_target_node(
         filename_patterns=[],  # We'll populate this with concrete files
         child_nodes=[],
         labels=labels or [],
+        includes=[],  # This is populated in parse_target_section, not here
     )
 
     # Collect include and exclude patterns

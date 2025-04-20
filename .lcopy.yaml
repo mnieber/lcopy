@@ -1,5 +1,6 @@
 targets:
-  generate-code:
-    code:
-      lcopy:
-        src/lcopy/*: true
+  copy-code:
+    files:
+      code:
+        lcopy:
+          src/lcopy/*: true

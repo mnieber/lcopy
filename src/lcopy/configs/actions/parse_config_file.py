@@ -3,8 +3,9 @@ import typing as T
 from pathlib import Path
 
 import yaml
-from lcopy.configs.actions.parse_target_node import parse_target_node
 from lcopy.configs.models.config import Config
+from lcopy.configs.models.options import Options
+from lcopy.configs.models.source_config import SourceConfig
 from lcopy.files.utils.normalize_path import normalize_path
 
 logger = logging.getLogger(__name__)
@@ -12,26 +13,9 @@ logger = logging.getLogger(__name__)
 
 def parse_config_file(
     config_file: str,
-    config_file_skip_list: T.List[str],
-    ignore_patterns: T.List[str],
-    recursive: bool = True,
-    labels: T.List[str] = None,
-) -> T.List[Config]:
-    # Initialize skip list if not provided
-    if config_file_skip_list is None:
-        config_file_skip_list = []
-
+) -> T.Optional[Config]:
     # Normalize path
     normalized_config_file = normalize_path(config_file)
-
-    # Skip if already processed
-    if normalized_config_file in config_file_skip_list:
-        logger.info(f"Skipping already processed config file: {normalized_config_file}")
-        return []
-
-    # Add to skip list
-    config_file_skip_list.append(normalized_config_file)
-
     logger.info(f"Parsing config file: {normalized_config_file}")
 
     # Read the config file
@@ -40,55 +24,59 @@ def parse_config_file(
             config_data = yaml.safe_load(f) or {}
     except FileNotFoundError:
         logger.error(f"Config file not found: {normalized_config_file}")
-        return []
+        return None
     except yaml.YAMLError as e:
         logger.error(f"Error parsing config file: {e}")
-        return []
+        return None
 
     # Get source directory from config file path
     source_dirname = str(Path(normalized_config_file).parent)
+    source_basename = Path(normalized_config_file).name
     logger.info(f"Source directory: {source_dirname}")
 
     # Create Config instance
     config = Config(
         source_dirname=source_dirname,
-        include_fns=config_data.get("include_fns", []),
+        source_basename=source_basename,
         target_nodes=[],
     )
 
-    # Parse target nodes
-    targets_data = config_data.get("targets", {})
-    for label, targets_json in targets_data.items():
-        if label not in labels:
-            continue
+    # Parse sources section
+    if "sources" in config_data:
+        _parse_sources(config_data.get("sources", {}), config, source_dirname)
 
-        for target_basename, target_node_json in targets_json.items():
-            # Parse target node
-            target_nodes = parse_target_node(
-                target_basename=target_basename,
-                source_dirname=source_dirname,
-                target_node_json=target_node_json,
-                ignore_patterns=ignore_patterns,
-            )
+    # Parse options section
+    if "options" in config_data:
+        _parse_options(config_data.get("options", {}), config)
 
-            # Add to config if not None
-            if target_nodes:
-                config.target_nodes.extend(target_nodes)
+    return config
 
-    configs = [config]
 
-    # Process included config files if recursive is enabled
-    if recursive and config.include_fns:
-        for include_fn in config.include_fns:
-            # Resolve path relative to source directory
-            include_path = normalize_path(include_fn, base_path=source_dirname)
-            included_configs = parse_config_file(
-                config_file=include_path,
-                config_file_skip_list=config_file_skip_list,
-                ignore_patterns=ignore_patterns,
-                recursive=recursive,
-                labels=labels,
-            )
-            configs.extend(included_configs)
+def _parse_sources(sources_data: dict, config: Config, base_dirname: str) -> None:
+    """Parse the sources section and populate the config.sources dict."""
+    for source_path, source_alias in sources_data.items():
+        # Normalize the source path relative to the config file location
+        absolute_path = normalize_path(source_path, base_path=base_dirname)
 
-    return configs
+        # Create and add the SourceConfig object
+        source_config = SourceConfig(path=absolute_path, alias=source_alias)
+        config.sources[source_alias] = source_config
+
+        logger.debug(f"Added source alias '{source_alias}' -> {absolute_path}")
+
+
+def _parse_options(options_data: dict, config: Config) -> None:
+    """Parse the options section and set the config.options field."""
+    options = Options(
+        destination=options_data.get("destination", ""),
+        conflict=options_data.get("conflict", "skip"),
+        verbose=options_data.get("verbose", False),
+        purge=options_data.get("purge", False),
+        dry_run=options_data.get("dry_run", False),
+        default_ignore=options_data.get("default_ignore", True),
+        extra_ignore=options_data.get("extra_ignore", []),
+        labels=options_data.get("labels", ["default"]),
+    )
+    config.options = options
+
+    logger.debug(f"Added options to config: destination={options.destination}")
