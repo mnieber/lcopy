@@ -13,3 +13,4 @@ class Options:
     default_ignore: bool = True
     extra_ignore: T.List[str] = []
     labels: T.List[str] = []
+    concatenated_output_filename: T.Optional[str] = None

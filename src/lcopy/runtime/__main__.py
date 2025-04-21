@@ -10,7 +10,9 @@ import sys
 from lcopy.configs.actions.parse_config_file import parse_config_file
 from lcopy.configs.actions.parse_target_section import parse_target_section
 from lcopy.files.actions.copy_files import copy_files
+from lcopy.files.actions.create_concatenated_output import create_concatenated_output
 from lcopy.files.actions.purge_files import purge_files
+from lcopy.files.utils.normalize_path import normalize_path
 from lcopy.runtime.rules.get_ignore_patterns import get_ignore_patterns
 
 logger = logging.getLogger(__name__)
@@ -131,6 +133,13 @@ def main():
                 destination=destination,
                 files_to_keep=copied_files,
                 dry_run=dry_run,
+            )
+
+        if config.options and config.options.concatenated_output_filename:
+            create_concatenated_output(
+                source_dirname=normalize_path(config.options.destination),
+                output_filename=config.options.concatenated_output_filename,
+                dry_run=bool(config.options and config.options.dry_run),
             )
 
         # Output summary of copy operation

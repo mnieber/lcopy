@@ -6,7 +6,7 @@ readme = "README.md"
 dependencies = ["pyyaml", "dataclassy"]
 
 [project.scripts]
-lcopy = "lcopy.cli:cli"
+lcopy = "lcopy.runtime.__main__:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

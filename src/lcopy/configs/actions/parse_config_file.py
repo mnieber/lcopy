@@ -3,6 +3,7 @@ import typing as T
 from pathlib import Path
 
 import yaml
+
 from lcopy.configs.models.config import Config
 from lcopy.configs.models.options import Options
 from lcopy.configs.models.source_config import SourceConfig
@@ -69,6 +70,10 @@ def _parse_options(options_data: dict, config: Config) -> None:
     """Parse the options section and set the config.options field."""
     options = Options(
         destination=options_data.get("destination", ""),
+        concatenated_output_filename=normalize_path(
+            options_data.get("concatenated_output_filename", ""),
+            base_path=config.source_dirname,
+        ),
         conflict=options_data.get("conflict", "skip"),
         verbose=options_data.get("verbose", False),
         purge=options_data.get("purge", False),
