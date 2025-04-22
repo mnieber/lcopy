@@ -155,11 +155,17 @@ def _handle_regex_pattern(
     full_glob_pattern = _create_glob_pattern(
         regex_pattern, variable_name, source_dirname
     )
-    matching_paths = glob.glob(full_glob_pattern)
-
-    if not matching_paths:
+    files = glob.glob(full_glob_pattern)
+    if not files:
         logger.debug(f"No matches found for glob pattern: {full_glob_pattern}")
         return []
+
+    matching_paths = get_filtered_files(
+        files=files,
+        source_dirname=source_dirname,
+        ignore_patterns=ignore_patterns or [],
+        exclude_patterns=[],
+    )
 
     # Create regex for extracting variable values
     regex = _create_regex_matcher(regex_pattern, variable_name)
