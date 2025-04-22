@@ -42,7 +42,7 @@ def _parse_args():
     )
 
     # Listlabels command
-    listlabels_parser = subparsers.add_parser(
+    subparsers.add_parser(
         "listlabels", help="List all available labels in config files"
     )
 

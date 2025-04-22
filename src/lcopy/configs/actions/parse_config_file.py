@@ -68,11 +68,16 @@ def _parse_sources(sources_data: dict, config: Config, base_dirname: str) -> Non
 
 def _parse_options(options_data: dict, config: Config) -> None:
     """Parse the options section and set the config.options field."""
+    concatenated_output_filename = options_data.get("concatenated_output_filename", "")
     options = Options(
         destination=options_data.get("destination", ""),
-        concatenated_output_filename=normalize_path(
-            options_data.get("concatenated_output_filename", ""),
-            base_path=config.source_dirname,
+        concatenated_output_filename=(
+            normalize_path(
+                concatenated_output_filename,
+                base_path=config.source_dirname,
+            )
+            if concatenated_output_filename
+            else ""
         ),
         conflict=options_data.get("conflict", "skip"),
         verbose=options_data.get("verbose", False),

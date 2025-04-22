@@ -30,7 +30,6 @@ def parse_target_node(
         target_basename=target_basename,
         filename_patterns=[],  # We'll populate this with concrete files
         child_nodes=[],
-        labels=labels or [],
         includes=[],  # This is populated in parse_target_section, not here
     )
 
@@ -82,9 +81,7 @@ def parse_target_node(
 
         # Handle directories by creating additional nodes to process
         if directories:
-            child_nodes = _handle_directories(
-                directories, source_dirname, labels, ignore_patterns
-            )
+            child_nodes = _handle_directories(directories, labels, ignore_patterns)
             if child_nodes:
                 target_node.child_nodes.extend(child_nodes)
 
@@ -108,7 +105,6 @@ def _expand_patterns(patterns: T.List[str], source_dirname: str) -> T.List[str]:
 
 def _handle_directories(
     directories: T.List[str],
-    parent_source_dirname: str,
     labels: T.List[str] = None,
     ignore_patterns: T.List[str] = None,
 ) -> T.List[TargetNode]:
@@ -146,8 +142,8 @@ def _handle_regex_pattern(
     source_dirname: str,
     target_basename: str,
     target_node_json: dict,
-    labels: T.List[str] = None,
-    ignore_patterns: T.List[str] = None,
+    labels: T.List[str],
+    ignore_patterns: T.List[str],
 ) -> T.List[TargetNode]:
     # Extract regex pattern from target_basename (remove parentheses)
     regex_pattern = target_basename[1:-1]
@@ -174,13 +170,11 @@ def _handle_regex_pattern(
         # Extract relative path and variable value
         rel_path = os.path.relpath(path, source_dirname)
         match = regex.match(rel_path)
-        if not match:
-            continue
 
         # Get target basename
         target_basename = (
             match.group(variable_name)
-            if variable_name in match.groupdict()
+            if match and variable_name in match.groupdict()
             else os.path.basename(path)
         )
 

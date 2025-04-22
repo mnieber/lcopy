@@ -1,15 +1,10 @@
 # Configuration files to use (can list multiple)
 sources:
-  ~/projects/sunya/src/mock/src/kits/python_app: python_app
-  ~/projects/sunya/src/mock/src/mock/lcopy: lcopy_spec
   ..: lcopy_src
 
 targets:
   default:
     include:
-      - python_app.instructions-for-using-scenarios
-      - python_app.instructions-for-generating-code
-      - lcopy_spec.use-scenarios
       - lcopy_src.copy-code
 
 options:
