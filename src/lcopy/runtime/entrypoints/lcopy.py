@@ -56,7 +56,9 @@ def _parse_args():
         "-v", "--verbose", action="count", default=0, help="Increase verbosity"
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.labels = sorted(set(args.labels)) if args.labels else []
+    return args
 
 
 def _setup_logging(verbosity):
