@@ -1,0 +1,174 @@
+import logging
+import typing as T
+from collections import defaultdict
+
+from lcopy.configs.actions.parse_config_file import parse_config_file
+
+logger = logging.getLogger(__name__)
+
+
+def transform_targets_json(
+    targets_json: dict,
+    source_dirname: str,
+    sources: T.Dict[str, str],
+    labels: T.List[str],
+    skip_list: T.List[str] | None = None,
+) -> dict:
+    if skip_list is None:
+        skip_list = []
+
+    transformed: T.Dict = {
+        "__source_dir__": source_dirname,
+    }
+
+    for target_basename, target_node_json in targets_json.items():
+        transformed_node = _transform_target_node_json(
+            target_basename=target_basename,
+            target_node_json=target_node_json,
+            source_dirname=source_dirname,
+            sources=sources,
+            labels=labels,
+            skip_list=skip_list,
+        )
+
+        if transformed_node is not None:
+            transformed[target_basename] = transformed_node
+
+    return transformed
+
+
+def _transform_target_node_json(
+    target_basename: str,
+    target_node_json: dict,
+    source_dirname: str,
+    sources: T.Dict[str, str],
+    labels: T.List[str],
+    skip_list: T.List[str],
+) -> T.Optional[dict]:
+    # Skip if labels don't match
+    node_labels = target_node_json.get("__labels__", [])
+    if node_labels and not any(label in labels for label in node_labels):
+        logger.debug(
+            f"Skipping target '{target_basename}' - labels {node_labels} not in requested labels {labels}"
+        )
+        return None
+
+    # Create a copy to avoid modifying the original
+    transformed = dict(target_node_json)
+
+    # Insert __source_dir__ directive
+    transformed["__source_dir__"] = source_dirname
+
+    # Handle parentheses pattern - transform (foo) to foo with __cd__ directive
+    actual_target_basename = target_basename
+    if target_basename.startswith("(") and target_basename.endswith(")"):
+        actual_target_basename = target_basename[1:-1]  # Remove parentheses
+        transformed["__cd__"] = actual_target_basename
+
+    # Process includes
+    _process_includes(sources, skip_list, transformed)
+
+    # Recursively transform child nodes
+    _process_child_nodes(
+        source_dirname,
+        sources,
+        labels,
+        skip_list,
+        transformed,
+    )
+
+    return transformed
+
+
+def _process_includes(sources, skip_list, transformed):
+    includes = transformed.get("__include__", [])
+    if includes:
+        if isinstance(includes, str):
+            includes = [includes]
+
+        # Process each include
+        labels_by_source_alias = _get_labels_by_source_alias(
+            includes, skip_list, sources
+        )
+        transformed["__include__"] = []
+        for source_alias, include_labels in labels_by_source_alias.items():
+            assert source_alias in sources
+            source_path = sources[source_alias]
+            source_config_file = f"{source_path}/.lcopy.yaml"
+            source_config_obj = parse_config_file(config_file=source_config_file)
+
+            if not source_config_obj:
+                logger.warning(
+                    f"Failed to load config file for source '{source_alias}'"
+                )
+                continue
+
+            # Transform the source config's targets recursively
+            source_transformed = transform_targets_json(
+                targets_json=source_config_obj.targets_json,
+                sources=source_config_obj.sources,
+                source_dirname=source_path,
+                labels=include_labels,
+                skip_list=[
+                    *skip_list,
+                    *[f"{source_alias}.{label}" for label in include_labels],
+                ],
+            )
+            transformed["__include__"].append(source_transformed)
+
+
+def _process_child_nodes(
+    source_dirname,
+    sources,
+    labels,
+    skip_list,
+    transformed,
+):
+    for key, value in list(transformed.items()):
+        if isinstance(value, dict) and not key.startswith("__"):
+            transformed_child = _transform_target_node_json(
+                target_basename=key,
+                target_node_json=value,
+                source_dirname=source_dirname,
+                sources=sources,
+                labels=labels,
+                skip_list=skip_list,
+            )
+
+            if transformed_child is not None:
+                transformed[key] = transformed_child
+            else:
+                # Remove the child if it was filtered out
+                del transformed[key]
+
+
+def _get_labels_by_source_alias(
+    includes: T.List[str], skip_list: T.List[str], sources: T.Dict[str, str]
+):
+    """
+    Get labels by source alias from the includes list.
+    """
+    labels_by_source_alias = defaultdict(list)
+
+    for include in includes:
+        parts = include.split(".")
+
+        source_alias = parts[0]
+        if source_alias not in sources:
+            logger.warning(f"Source alias '{source_alias}' not found in sources")
+            continue
+
+        if len(parts) == 1:
+            if source_alias in skip_list:
+                logger.debug(f"Skipping source alias '{source_alias}' as per skip list")
+                continue
+
+        labels = labels_by_source_alias[source_alias]
+        for label in parts[1:]:
+            if f"{source_alias}.{label}" in skip_list:
+                logger.debug(f"Skipping source alias '{source_alias}' as per skip list")
+                continue
+            if label not in labels:
+                labels.append(label)
+
+    return labels_by_source_alias

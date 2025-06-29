@@ -15,7 +15,6 @@ def copy_files(
     overwrite: str = "skip",
     dry_run: bool = False,
 ) -> T.List[str]:
-    # Initialize the list of copied files
     copied_files = []
 
     if not target_nodes:
@@ -58,8 +57,10 @@ def _process_target_node(
     overwrite: str,
     dry_run: bool,
 ) -> None:
-    # Create target directory path
-    target_dir = os.path.join(destination, target_node.target_basename)
+    # Create target directory path based on relative_target_dir
+    target_dir = destination
+    if target_node.relative_target_dir:
+        target_dir = os.path.join(destination, target_node.relative_target_dir)
 
     # Ensure target directory exists
     if not dry_run and not os.path.exists(target_dir):
@@ -68,8 +69,8 @@ def _process_target_node(
     elif dry_run and not os.path.exists(target_dir):
         logger.info(f"Would create directory: {target_dir}")
 
-    # Copy each file (the filename_patterns now contains concrete file paths)
-    for src_file in target_node.filename_patterns:
+    # Copy each file
+    for src_file in target_node.filenames:
         # Normalize the source file path to handle any potential issues
         src_file = normalize_path(src_file)
 
@@ -80,7 +81,7 @@ def _process_target_node(
 
         # Determine destination filename - maintain the same basename
         basename = os.path.basename(src_file)
-        dest_file = os.path.join(target_dir, basename)
+        dest_file = normalize_path(basename, base_path=target_dir)
 
         # Copy the file
         if _copy_file(src_file, dest_file, overwrite, dry_run):
@@ -138,7 +139,6 @@ def _copy_file(src_file: str, dest_file: str, overwrite: str, dry_run: bool) -> 
         try:
             logger.info(f"Copying file: {src_file} -> {dest_file}")
             shutil.copy2(src_file, dest_file)
-
             return True
         except (IOError, OSError) as e:
             logger.error(f"Error copying file {src_file} to {dest_file}: {e}")

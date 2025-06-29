@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 
 def get_list_of_labels(config_file: str) -> T.List[str]:
     """
-    Extract all labels from the targets section of a config file and
-    all included source configs.
+    Extract all labels from the __labels__ directives in the files section
+    of a config file and all included source configs.
     """
     labels = set()
     processed_files = set()
@@ -54,10 +54,9 @@ def _collect_labels_from_file(
         logger.error(f"Error parsing config file: {e}")
         return
 
-    # Extract labels from targets section
-    targets_data = config_data.get("targets", {})
-    for label in targets_data.keys():
-        labels.add(label)
+    # Extract labels from files section
+    files_data = config_data.get("files", {})
+    _extract_labels_from_json(files_data, labels)
 
     # Process sources section to find more labels
     sources_data = config_data.get("sources", {})
@@ -73,3 +72,24 @@ def _collect_labels_from_file(
             if os.path.isfile(source_config_file):
                 # Recursively collect labels from the source config file
                 _collect_labels_from_file(source_config_file, labels, processed_files)
+
+
+def _extract_labels_from_json(json_data: dict, labels: set) -> None:
+    """
+    Recursively extract labels from __labels__ directives in the JSON structure.
+    """
+    if not isinstance(json_data, dict):
+        return
+
+    # Check for __labels__ directive at this level
+    node_labels = json_data.get("__labels__", [])
+    if node_labels:
+        if isinstance(node_labels, str):
+            labels.add(node_labels)
+        elif isinstance(node_labels, list):
+            labels.update(node_labels)
+
+    # Recursively process child nodes
+    for key, value in json_data.items():
+        if isinstance(value, dict) and not key.startswith("__"):
+            _extract_labels_from_json(value, labels)

@@ -3,6 +3,8 @@ import logging
 import os
 import typing as T
 
+from lcopy.files.utils.normalize_path import normalize_path
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +30,7 @@ def get_filtered_files(
         filtered_files = _filter_by_ignore_patterns(filtered_files, ignore_patterns)
 
     logger.debug(f"Filtered {len(files)} files to {len(filtered_files)} files")
-    return filtered_files
+    return [normalize_path(f) for f in filtered_files]
 
 
 def _filter_by_exclude_patterns(

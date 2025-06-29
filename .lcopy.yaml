@@ -1,6 +1,19 @@
-targets:
-  copy-code:
-    files:
-      code:
-        lcopy:
-          src/lcopy/*: true
+sources:
+  ~/projects/sunya/src/mock/src/mock/lcopy: lcopy_spec
+
+files:
+  code:
+    __labels__: [code]
+    lcopy:
+      src/lcopy/*: true
+  ".":
+    __labels__: [spec]
+    __include__: [lcopy_spec]
+
+options:
+  destination: ~/projects/lcopy/res/claude/lcopy_{labels}
+  concatenated_output_filename: ~/projects/lcopy/res/claude/input/lcopy_{labels}.txt
+  conflict: overwrite
+  verbose: false
+  purge: true
+

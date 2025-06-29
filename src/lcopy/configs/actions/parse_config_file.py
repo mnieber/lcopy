@@ -3,10 +3,8 @@ import typing as T
 from pathlib import Path
 
 import yaml
-
 from lcopy.configs.models.config import Config
 from lcopy.configs.models.options import Options
-from lcopy.configs.models.source_config import SourceConfig
 from lcopy.files.utils.normalize_path import normalize_path
 
 logger = logging.getLogger(__name__)
@@ -32,14 +30,12 @@ def parse_config_file(
 
     # Get source directory from config file path
     source_dirname = str(Path(normalized_config_file).parent)
-    source_basename = Path(normalized_config_file).name
     logger.info(f"Source directory: {source_dirname}")
 
     # Create Config instance
     config = Config(
         source_dirname=source_dirname,
-        source_basename=source_basename,
-        target_nodes=[],
+        targets_json=config_data.get("files", {}),
     )
 
     # Parse sources section
@@ -58,11 +54,7 @@ def _parse_sources(sources_data: dict, config: Config, base_dirname: str) -> Non
     for source_path, source_alias in sources_data.items():
         # Normalize the source path relative to the config file location
         absolute_path = normalize_path(source_path, base_path=base_dirname)
-
-        # Create and add the SourceConfig object
-        source_config = SourceConfig(path=absolute_path, alias=source_alias)
-        config.sources[source_alias] = source_config
-
+        config.sources[source_alias] = absolute_path
         logger.debug(f"Added source alias '{source_alias}' -> {absolute_path}")
 
 
@@ -70,7 +62,9 @@ def _parse_options(options_data: dict, config: Config) -> None:
     """Parse the options section and set the config.options field."""
     concatenated_output_filename = options_data.get("concatenated_output_filename", "")
     options = Options(
-        destination=options_data.get("destination", ""),
+        destination=normalize_path(
+            options_data.get("destination", config.source_dirname)
+        ),
         concatenated_output_filename=(
             normalize_path(
                 concatenated_output_filename,
@@ -85,7 +79,6 @@ def _parse_options(options_data: dict, config: Config) -> None:
         dry_run=options_data.get("dry_run", False),
         default_ignore=options_data.get("default_ignore", True),
         extra_ignore=options_data.get("extra_ignore", []),
-        labels=options_data.get("labels", ["default"]),
     )
     config.options = options
 
