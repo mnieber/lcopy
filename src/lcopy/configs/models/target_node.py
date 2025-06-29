@@ -9,4 +9,3 @@ class TargetNode:
     relative_target_dir: str
     filenames: T.List[str]
     child_nodes: T.List["TargetNode"] = []
-    includes: T.List[str] = []  # List of references like "source_alias.label"

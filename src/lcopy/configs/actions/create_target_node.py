@@ -30,7 +30,6 @@ def create_target_node(
         relative_target_dir=relative_target_dir,
         filenames=[],
         child_nodes=[],
-        includes=[],
     )
 
     # Collect include and exclude patterns

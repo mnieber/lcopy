@@ -39,6 +39,7 @@ def _parse_args():
         help="Show what would be copied without actually copying",
     )
     parser.add_argument(
+        "-l",
         "--label",
         action="append",
         dest="labels",
