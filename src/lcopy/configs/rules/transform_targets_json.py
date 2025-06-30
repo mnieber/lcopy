@@ -17,22 +17,15 @@ def transform_targets_json(
     if skip_list is None:
         skip_list = []
 
-    transformed: T.Dict = {
-        "__source_dir__": source_dirname,
-    }
+    transformed: T.Dict = {"__source_dir__": source_dirname, **targets_json}
 
-    for target_basename, target_node_json in targets_json.items():
-        transformed_node = _transform_target_node_json(
-            target_basename=target_basename,
-            target_node_json=target_node_json,
-            source_dirname=source_dirname,
-            sources=sources,
-            labels=labels,
-            skip_list=skip_list,
-        )
-
-        if transformed_node is not None:
-            transformed[target_basename] = transformed_node
+    _process_child_nodes(
+        source_dirname=source_dirname,
+        sources=sources,
+        labels=labels,
+        skip_list=skip_list,
+        transformed=transformed,
+    )
 
     return transformed
 
