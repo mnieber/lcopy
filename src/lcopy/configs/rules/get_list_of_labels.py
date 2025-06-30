@@ -24,7 +24,7 @@ def get_list_of_labels(config_file: str) -> T.List[str]:
 
 
 def _collect_labels_from_file(
-    config_file: str, labels: set, processed_files: set
+    config_file: str, labels: set, processed_files: set, source: str | None = None
 ) -> None:
     """
     Recursively collect labels from a config file and its sources.
@@ -56,13 +56,13 @@ def _collect_labels_from_file(
 
     # Extract labels from files section
     files_data = config_data.get("files", {})
-    _extract_labels_from_json(files_data, labels)
+    _extract_labels_from_json(files_data, labels, source=source)
 
     # Process sources section to find more labels
     sources_data = config_data.get("sources", {})
     if sources_data:
         source_dirname = os.path.dirname(normalized_config_file)
-        for source_path, _ in sources_data.items():
+        for source_path, source in sources_data.items():
             # Get absolute path to source
             source_abs_path = normalize_path(source_path, base_path=source_dirname)
 
@@ -71,25 +71,31 @@ def _collect_labels_from_file(
 
             if os.path.isfile(source_config_file):
                 # Recursively collect labels from the source config file
-                _collect_labels_from_file(source_config_file, labels, processed_files)
+                _collect_labels_from_file(
+                    source_config_file, labels, processed_files, source=source
+                )
 
 
-def _extract_labels_from_json(json_data: dict, labels: set) -> None:
+def _extract_labels_from_json(
+    json_data: dict, labels: set, source: str | None = None
+) -> None:
     """
     Recursively extract labels from __labels__ directives in the JSON structure.
     """
     if not isinstance(json_data, dict):
         return
 
+    prefix = f"{source}." if source else ""
+
     # Check for __labels__ directive at this level
     node_labels = json_data.get("__labels__", [])
     if node_labels:
         if isinstance(node_labels, str):
-            labels.add(node_labels)
+            labels.add(prefix + node_labels)
         elif isinstance(node_labels, list):
-            labels.update(node_labels)
+            labels.update((prefix + l) for l in node_labels)
 
     # Recursively process child nodes
     for key, value in json_data.items():
         if isinstance(value, dict) and not key.startswith("__"):
-            _extract_labels_from_json(value, labels)
+            _extract_labels_from_json(value, labels, source=source)

@@ -18,7 +18,9 @@ def transform_targets_json(
     if skip_list is None:
         skip_list = []
 
-    transformed: T.Dict = {"__source_dir__": source_dirname, **targets_json}
+    transformed: T.Dict = targets_json.copy()
+    if "__source_dir__" not in transformed:
+        transformed["__source_dir__"] = source_dirname
 
     _process_child_nodes(
         source_dirname=source_dirname,
