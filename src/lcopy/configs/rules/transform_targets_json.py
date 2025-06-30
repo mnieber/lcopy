@@ -1,6 +1,7 @@
 import logging
 import typing as T
 from collections import defaultdict
+from pathlib import Path
 
 from lcopy.configs.actions.parse_config_file import parse_config_file
 
@@ -31,7 +32,7 @@ def transform_targets_json(
 
 
 def _transform_target_node_json(
-    target_basename: str,
+    cd: str | None,
     target_node_json: dict,
     source_dirname: str,
     sources: T.Dict[str, str],
@@ -40,15 +41,9 @@ def _transform_target_node_json(
 ) -> dict:
     # Create a copy to avoid modifying the original
     transformed = dict(target_node_json)
-
-    # Insert __source_dir__ directive
     transformed["__source_dir__"] = source_dirname
-
-    # Handle parentheses pattern - transform (foo) to foo with __cd__ directive
-    actual_target_basename = target_basename
-    if target_basename.startswith("(") and target_basename.endswith(")"):
-        actual_target_basename = target_basename[1:-1]  # Remove parentheses
-        transformed["__cd__"] = actual_target_basename
+    if cd:
+        transformed["__cd__"] = cd
 
     # Process includes
     _process_includes(sources, skip_list, transformed)
@@ -120,14 +115,32 @@ def _process_child_nodes(
                 del transformed[key]
                 continue
 
-            transformed[key] = _transform_target_node_json(
-                target_basename=key,
-                target_node_json=value,
-                source_dirname=source_dirname,
-                sources=sources,
-                labels=labels,
-                skip_list=skip_list,
-            )
+            # Handle parentheses pattern - transform (foo) to foo with __cd__ directive
+            target_basenames = []
+            if key.startswith("(") and key.endswith(")"):
+                target_basename = key[1:-1]  # Remove parentheses
+
+                if target_basename.startswith("<") and target_basename.endswith(">"):
+                    # If it starts with < and ends with >, then find all directories in source_dirname
+                    # and add them to the target_basenames
+                    for path in Path(source_dirname).iterdir():
+                        if path.is_dir():
+                            target_basenames.append((path.name, path.name))
+                else:
+                    target_basenames.append((target_basename, target_basename))
+            else:
+                target_basenames.append((key, None))
+
+            for target_basename, cd in target_basenames:
+                target_node_json = value.copy()
+                transformed[target_basename] = _transform_target_node_json(
+                    cd=cd,
+                    target_node_json=target_node_json,
+                    source_dirname=source_dirname,
+                    sources=sources,
+                    labels=labels,
+                    skip_list=skip_list,
+                )
 
 
 def _get_labels_by_source_alias(
