@@ -37,15 +37,7 @@ def _transform_target_node_json(
     sources: T.Dict[str, str],
     labels: T.List[str],
     skip_list: T.List[str],
-) -> T.Optional[dict]:
-    # Skip if labels don't match
-    node_labels = target_node_json.get("__labels__", [])
-    if node_labels and not any(label in labels for label in node_labels):
-        logger.debug(
-            f"Skipping target '{target_basename}' - labels {node_labels} not in requested labels {labels}"
-        )
-        return None
-
+) -> dict:
     # Create a copy to avoid modifying the original
     transformed = dict(target_node_json)
 
@@ -119,7 +111,16 @@ def _process_child_nodes(
 ):
     for key, value in list(transformed.items()):
         if isinstance(value, dict) and not key.startswith("__"):
-            transformed_child = _transform_target_node_json(
+            # Skip if labels don't match
+            node_labels = value.get("__labels__", [])
+            if node_labels and not any(label in labels for label in node_labels):
+                logger.debug(
+                    f"Skipping target '{key}' - labels {node_labels} not in requested labels {labels}"
+                )
+                del transformed[key]
+                continue
+
+            transformed[key] = _transform_target_node_json(
                 target_basename=key,
                 target_node_json=value,
                 source_dirname=source_dirname,
@@ -127,12 +128,6 @@ def _process_child_nodes(
                 labels=labels,
                 skip_list=skip_list,
             )
-
-            if transformed_child is not None:
-                transformed[key] = transformed_child
-            else:
-                # Remove the child if it was filtered out
-                del transformed[key]
 
 
 def _get_labels_by_source_alias(
