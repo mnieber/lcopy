@@ -19,11 +19,6 @@ def create_target_node(
     source_dirname = target_node_json.get("__source_dir__", "")
     assert source_dirname
 
-    # Handle __cd__ directive if present
-    if "__cd__" in target_node_json:
-        cd_path = target_node_json["__cd__"]
-        source_dirname = normalize_path(cd_path, base_path=source_dirname)
-
     # Create target node instance
     target_node = TargetNode(
         source_dirname=source_dirname,

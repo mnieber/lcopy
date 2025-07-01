@@ -1,4 +1,6 @@
+import json
 import logging
+import os
 import typing as T
 from collections import defaultdict
 from pathlib import Path
@@ -10,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 def transform_targets_json(
     targets_json: dict,
+    snippets_json: dict,
     source_dirname: str,
     sources: T.Dict[str, str],
     labels: T.List[str],
@@ -18,11 +21,12 @@ def transform_targets_json(
     if skip_list is None:
         skip_list = []
 
-    transformed: T.Dict = targets_json.copy()
+    transformed: T.Dict = _deep_copy(targets_json)
     if "__source_dir__" not in transformed:
         transformed["__source_dir__"] = source_dirname
 
     _process_child_nodes(
+        snippets_json,
         source_dirname=source_dirname,
         sources=sources,
         labels=labels,
@@ -34,7 +38,7 @@ def transform_targets_json(
 
 
 def _transform_target_node_json(
-    cd: str | None,
+    snippets_json: dict,
     target_node_json: dict,
     source_dirname: str,
     sources: T.Dict[str, str],
@@ -42,16 +46,27 @@ def _transform_target_node_json(
     skip_list: T.List[str],
 ) -> dict:
     # Create a copy to avoid modifying the original
-    transformed = dict(target_node_json)
+    transformed = _deep_copy(target_node_json)
     transformed["__source_dir__"] = source_dirname
-    if cd:
-        transformed["__cd__"] = cd
+
+    # If the target nodes has snippets, include them
+    if "__snippets__" in transformed:
+        snippets = transformed["__snippets__"]
+        if isinstance(snippets, str):
+            snippets = [snippets]
+        for snippet in snippets:
+            if snippet in snippets_json:
+                snippet_json = snippets_json[snippet]
+                transformed.update(_deep_copy(snippet_json))
+            else:
+                logger.warning(f"Snippet '{snippet}' not found in snippets JSON")
 
     # Process includes
     _process_includes(sources, skip_list, transformed)
 
     # Recursively transform child nodes
     _process_child_nodes(
+        snippets_json,
         source_dirname,
         sources,
         labels,
@@ -60,6 +75,10 @@ def _transform_target_node_json(
     )
 
     return transformed
+
+
+def _deep_copy(snippet_json):
+    return json.loads(json.dumps(snippet_json))
 
 
 def _process_includes(sources, skip_list, transformed):
@@ -88,6 +107,7 @@ def _process_includes(sources, skip_list, transformed):
             # Transform the source config's targets recursively
             source_transformed = transform_targets_json(
                 targets_json=source_config_obj.targets_json,
+                snippets_json=source_config_obj.snippets_json,
                 sources=source_config_obj.sources,
                 source_dirname=source_path,
                 labels=include_labels,
@@ -100,6 +120,7 @@ def _process_includes(sources, skip_list, transformed):
 
 
 def _process_child_nodes(
+    snippets_json: dict,
     source_dirname,
     sources,
     labels,
@@ -108,6 +129,10 @@ def _process_child_nodes(
 ):
     for key, value in list(transformed.items()):
         if isinstance(value, dict) and not key.startswith("__"):
+            next_source_dirname = source_dirname
+            if cd := value.get("__cd__"):
+                next_source_dirname = os.path.join(source_dirname, cd)
+
             # Skip if labels don't match
             node_labels = value.get("__labels__", [])
             if node_labels and not any(label in labels for label in node_labels):
@@ -117,32 +142,40 @@ def _process_child_nodes(
                 del transformed[key]
                 continue
 
-            # Handle parentheses pattern - transform (foo) to foo with __cd__ directive
-            target_basenames = []
-            if key.startswith("(") and key.endswith(")"):
-                target_basename = key[1:-1]  # Remove parentheses
-
-                if target_basename.startswith("<") and target_basename.endswith(">"):
-                    # If it starts with < and ends with >, then find all directories in source_dirname
-                    # and add them to the target_basenames
-                    for path in Path(source_dirname).iterdir():
-                        if path.is_dir():
-                            target_basenames.append((path.name, path.name))
-                else:
-                    target_basenames.append((target_basename, target_basename))
-            else:
-                target_basenames.append((key, None))
+            # Handle parentheses pattern
+            target_basenames = _handle_parentheses(
+                transformed, key, next_source_dirname
+            )
 
             for target_basename, cd in target_basenames:
-                target_node_json = value.copy()
+                target_node_json = _deep_copy(value)
                 transformed[target_basename] = _transform_target_node_json(
-                    cd=cd,
+                    snippets_json=snippets_json,
                     target_node_json=target_node_json,
-                    source_dirname=source_dirname,
+                    source_dirname=os.path.join(next_source_dirname, cd or ""),
                     sources=sources,
                     labels=labels,
                     skip_list=skip_list,
                 )
+
+
+def _handle_parentheses(transformed, key, next_source_dirname):
+    target_basenames = []
+    if key.startswith("(") and key.endswith(")"):
+        del transformed[key]
+        target_basename = key[1:-1]  # Remove parentheses
+
+        if target_basename.startswith("<") and target_basename.endswith(">"):
+            # If it starts with < and ends with >, then find all directories in source_dirname
+            # and add them to the target_basenames
+            for path in Path(next_source_dirname).iterdir():
+                if path.is_dir():
+                    target_basenames.append((path.name, path.name))
+        else:
+            target_basenames.append((target_basename, target_basename))
+    else:
+        target_basenames.append((key, None))
+    return target_basenames
 
 
 def _get_labels_by_source_alias(

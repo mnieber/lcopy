@@ -47,7 +47,8 @@ def copy_files(
 
     action_verb = "Would copy" if dry_run else "Copied"
     logger.info(f"{action_verb} {len(copied_files)} files to {destination}")
-    return copied_files
+
+    return sorted(copied_files)
 
 
 def _process_target_node(

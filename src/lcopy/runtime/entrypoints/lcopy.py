@@ -111,13 +111,16 @@ def main():
         )
 
     # Parse target section to get target nodes
+    transformed_targets_json = transform_targets_json(
+        targets_json=config.targets_json,
+        snippets_json=config.snippets_json,
+        source_dirname=config.source_dirname,
+        sources=config.sources,
+        labels=args.labels,
+    )
+
     target_nodes = create_target_nodes(
-        transform_targets_json(
-            targets_json=config.targets_json,
-            source_dirname=config.source_dirname,
-            sources=config.sources,
-            labels=args.labels,
-        ),
+        transformed_targets_json,
         ignore_patterns=ignore_patterns,
     )
     if not target_nodes:

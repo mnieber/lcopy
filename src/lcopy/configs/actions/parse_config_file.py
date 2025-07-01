@@ -36,6 +36,7 @@ def parse_config_file(
     config = Config(
         source_dirname=source_dirname,
         targets_json=config_data.get("files", {}),
+        snippets_json=config_data.get("snippets", {}),
     )
 
     # Parse sources section

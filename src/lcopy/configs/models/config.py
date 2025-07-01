@@ -10,5 +10,6 @@ if T.TYPE_CHECKING:
 class Config:
     source_dirname: str
     targets_json: dict
+    snippets_json: dict
     sources: T.Dict[str, str] = {}
     options: T.Optional["Options"] = None
